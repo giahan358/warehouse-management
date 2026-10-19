@@ -2,9 +2,10 @@
 
 | **Thành viên** | **Công việc** |
 | --- | --- |
-| FE 1 – Gia Hân | Làm giao diện liên quan đến admin và staff |
-| FE 2 – Nam Quang | Làm giao diện liên quan đến khách hàng |
+| FE 1 – Gia Hân | Làm giao diện liên quan đến role admin và staff |
+| FE 2 – Nam Quang | Làm giao diện liên quan đến role khách hàng |
 
+Lưu ý: nhìn vào cột Vai trò ở mục 2 và làm theo công việc đã phân công.
 
 **2\. Danh sách màn hình và chức năng Frontend**
 
@@ -19,13 +20,14 @@
 | 7 | Lịch nhập kho và danh sách phiếu nhập | Cả 3 vai trò | Hiển thị phiếu nhập theo trạng thái, khách hàng và thời gian dự kiến; tìm kiếm, lọc; Customer xem phiếu của mình; Staff/Admin theo dõi lịch nhập và các phiếu cần tiếp nhận. |
 | 8 | Đăng ký nhập kho | Customer | Chọn sản phẩm, nhập số lượng dự kiến, ngày giờ hàng đến và ghi chú; thêm nhiều sản phẩm vào một phiếu; gửi đăng ký; xem hoặc chỉnh sửa phiếu khi còn được phép. |
 | 9 | Tiếp nhận và kiểm đếm hàng nhập | Staff / Admin | Xem chi tiết phiếu; bắt đầu tiếp nhận; nhập số lượng thực nhận cho từng sản phẩm; ghi chú chênh lệch; xác nhận nhập kho hoặc hủy theo quy định. Tồn kho được cập nhật sau khi xác nhận thành công. |
-| 10 | Quản lý đơn xuất kho | Cả 3 vai trò | Xem danh sách đơn xuất; tìm kiếm, lọc theo trạng thái và thời gian; Customer xem đơn của mình; Staff/Admin xem và xử lý đơn theo quyền. |
+| 10 | Quản lý đơn xuất kho (có kèm chức năng gửi email)| Cả 3 vai trò | Xem danh sách đơn xuất; tìm kiếm, lọc theo trạng thái và thời gian; Customer xem đơn của mình; Staff/Admin xem và xử lý đơn theo quyền.Thêm nút Gửi email ở mỗi đơn; Chỉ Staff/Admin có quyền gửi theo quy tắc phân quyền;
+Hiển thị thông báo gửi thành công hoặc thất bại. |
 | 11 | Tạo yêu cầu xuất kho | Customer | Chọn sản phẩm và số lượng cần xuất; nhập người nhận, số điện thoại, địa chỉ giao hàng và phương thức thanh toán; kiểm tra thông tin trước khi gửi yêu cầu. |
 | 12 | Xử lý đơn xuất kho | Staff / Admin; Customer xem | Xem chi tiết đơn; kiểm tra tồn kho; chuyển trạng thái chuẩn bị hàng, đang giao và đã giao; hủy đơn khi đáp ứng điều kiện. Customer chỉ xem chi tiết và tiến độ đơn của mình. |
 | 13 | Quản lý hóa đơn dịch vụ | Admin / Customer | Admin tạo và quản lý hóa đơn, xem số tiền và trạng thái thanh toán; Customer xem hóa đơn của mình, chi tiết phí dịch vụ và số tiền cần trả. |
 | 14 | Thanh toán | Customer | Chọn thanh toán VNPay hoặc COD nếu được hỗ trợ; khởi tạo giao dịch VNPay; hiển thị kết quả và trạng thái thanh toán của hóa đơn. |
 | 15 | Hồ sơ cá nhân | Cả 3 vai trò | Xem và cập nhật thông tin cá nhân như họ tên, số điện thoại, địa chỉ; hiển thị email và vai trò tài khoản. Khách hàng có thể xem thông tin cửa hàng riêng. |
-
+| 16 | Lịch sử gửi email | Admin và Staff | Danh sách email, người nhận, tiêu đề, thời gian gửi. Trạng thái SENT hoặc FAILED. Xem nội dung email và lỗi gửi nếu có. |
 
 **Lưu ý:**
 
@@ -46,7 +48,7 @@ Phân quyền phải được kiểm tra ở Backend. FE chỉ ẩn/hiện chứ
 | Quản lý sản phẩm toàn hệ thống | Quản lý sản phẩm của mình |
 | Xem kho hàng toàn hệ thống | Xem tồn kho của mình |
 | Danh sách và tiếp nhận hàng nhập | Đăng ký nhập kho |
-| Xử lý đơn xuất kho | Tạo yêu cầu xuất kho |
+| Xử lý đơn xuất kho(có gửi email) | Tạo yêu cầu xuất kho |
 | Quản lý hóa đơn | Xem hóa đơn của mình |
 | Theo dõi thanh toán, nếu được phân quyền | Thanh toán VNPay/COD |
 

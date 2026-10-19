@@ -1,7 +1,9 @@
 | **Thành viên** | **Công việc** |
 | --- | --- |
-| BE 1 – Huy Kỳ | Mục 2.1, 2.2, 2.3 (bao gồm tích hợp đăng nhập tài khoản bằng email thật (nên tạo 1 tài khoản email riêng để phục vụ cho đồ án, k nên dùng email thật)) |
-| BE 2 – Nhật Minh | Mục 2.4, 2.5, 2.6 (bao gồm tích hợp thanh toán vnpay)|
+| BE 1 – Huy Kỳ | Mục 2.1, 2.2, 2.3 (bao gồm tích hợp đăng nhập tài khoản bằng email thật) |
+| BE 2 – Nhật Minh | Mục 2.4, 2.5, 2.6 (bao gồm tích hợp thanh toán vnpay, gửi thông báo cho customer qua email)|
+
+Lưu ý: nên tạo tài khoản email riêng để phục vụ cho đồ án, k nên dùng email thật
 
 **1\. Quy ước hợp đồng API chung**
 
@@ -191,6 +193,21 @@ Với VNPay, Backend phải xác minh chữ ký, số tiền, mã giao dịch v�
 | GET /dashboard/customer | Không có | Tồn kho, phiếu nhập, đơn xuất và hóa đơn của chính Customer | Customer |
 
 Lỗi chung: 401 UNAUTHENTICATED, 403 FORBIDDEN, 500 INTERNAL\_ERROR.
+
+API: Email Notifications
+
+**Prefix URL:** `/api/v1/email-notifications`
+
+---
+
+**2.7. Gửi thông báo qua email**
+
+| Method | Endpoint | Chức năng | Mô tả chi tiết |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/outbound-orders/{id}/send` | Gửi thông báo đơn xuất kho | Kích hoạt gửi email thông báo chi tiết cho một đơn xuất kho xác định theo `{id}`. |
+| `GET` | `/` | Xem lịch sử gửi email | Trả về danh sách lịch sử các email đã được hệ thống gửi, hỗ trợ phân trang và bộ lọc. |
+| `GET` | `/{id}` | Xem chi tiết email | Lấy thông tin chi tiết của một email cụ thể theo `{id}` (trạng thái gửi, người nhận, thời gian, nội dung,...). |
+| `POST` | `/test` | Gửi email thử nghiệm | Cho phép gửi email kiểm tra hệ thống. **Lưu ý:** Chỉ dành cho tài khoản Admin hoặc chạy trong môi trường phát triển (Development/Staging). |
 
 **3\. Danh sách mã lỗi chung để BE thống nhất**
 
