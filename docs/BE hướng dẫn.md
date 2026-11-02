@@ -230,3 +230,26 @@ Lưu ý: Controller không nên code trước toàn bộ nghiệp vụ. Nhóm c�
 | Security/Config | Xác thực, phân quyền, cấu hình chung |
 | Exception Handler | Chuẩn hóa mã lỗi và response lỗi |
 | Test | Kiểm thử nghiệp vụ và API |
+
+## 4. Cài đặt database MySQL
+
+Dùng MySQL 8.0.16 trở lên. Schema và dữ liệu mẫu nằm trong [`docs/warehouse_db.sql`](docs/warehouse_db.sql).
+
+## 5. Cấu hình và chạy backend
+
+Backend lấy thông tin kết nối từ biến môi trường:
+
+| Biến | Giá trị local mặc định/gợi ý |
+| --- | --- |
+| `DB_URL` | `jdbc:mysql://localhost:3306/warehouse_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8` |
+| `DB_USERNAME` | `warehouse_app` |
+| `DB_PASSWORD` | Mật khẩu bạn đặt khi tạo MySQL user |
+| `MAIL_USERNAME` | Gmail dùng để gửi email thông báo |
+| `MAIL_PASSWORD` | Google App Password (không phải mật khẩu đăng nhập Gmail) |
+
+Sau đó chạy backend:
+
+```powershell
+cd backend
+.\mvnw.cmd spring-boot:run
+```

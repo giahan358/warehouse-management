@@ -53,3 +53,41 @@ Phân quyền phải được kiểm tra ở Backend. FE chỉ ẩn/hiện chứ
 | Theo dõi thanh toán, nếu được phân quyền | Thanh toán VNPay/COD |
 
 **Lưu ý**: Một số màn hình như đăng nhập, quản lý sản phẩm và tồn kho có thể dùng chung component nhưng hiển thị dữ liệu/chức năng khác nhau theo vai trò. Không cần tạo hai bộ giao diện hoàn toàn riêng.
+
+## 4. Bảng đối chiếu 19 giao diện với API `[MỚI]`
+
+### Admin
+
+| **Giao diện** | **API chính** |
+| --- | --- |
+| Tổng quan hệ thống | GET /dashboard/admin, /dashboard/admin/flow, /dashboard/admin/tenant-usage, /dashboard/admin/zone-usage |
+| Quản lý khách hàng | GET/POST /customers, GET/PUT /customers/{id}, PATCH /users/{id}/status |
+| Danh mục & Tồn kho | GET /inventory, GET /inventory/summary, POST /products (kèm customerId), PATCH /products/{id}/status |
+| Quản lý Nhập kho | GET /inbound-receipts, GET /inbound-receipts/status-counts, POST /inbound-receipts (customerId), PATCH …/start, …/confirm (Duyệt), …/cancel (Từ chối) |
+| Xuất kho & COD | GET /outbound-orders, GET /cod/orders, GET /cod/orders/summary, PATCH /outbound-orders/{id}/cod/status, POST /outbound-orders/{id}/cod/confirm |
+| Hóa đơn phí dịch vụ & VNPay | GET/POST /invoices, GET /invoices/summary, GET /payments, POST /payments/vnpay/ipn/mock, POST /invoices/{id}/send-email |
+| Tài khoản & Phân quyền | GET /users (filter loginMethod), GET /users/summary, GET /users/permission-matrix, POST /users, PATCH /users/{id}/status |
+
+### Khách hàng
+
+| **Giao diện** | **API chính** |
+| --- | --- |
+| Tổng quan & Tồn kho của tôi | GET /dashboard/customer, GET /dashboard/customer/operations, GET /inventory/me, GET /inventory/me/summary |
+| Đăng ký Lịch nhập kho | GET/POST/PUT /inbound-receipts, POST/PUT/DELETE …/items, PATCH …/cancel, GET …/discrepancy-report |
+| Danh mục & Thông tin Sản phẩm | GET/POST/PUT /products, PATCH /products/{id}/status |
+| Yêu cầu Xuất kho & Giao hàng | GET/POST /outbound-orders, POST …/items, PATCH …/cancel, GET /inventory/me (tra cứu kho tồn) |
+| Hóa đơn Phí dịch vụ & Thanh toán VNPay | GET /invoices/me, GET /invoices/me/current, GET /invoices/{id}, POST /invoices/{id}/payments/vnpay |
+| Hồ sơ Doanh nghiệp & Tài khoản | GET/PUT /customers/me |
+
+### Nhân viên kho
+
+| **Giao diện** | **API chính** |
+| --- | --- |
+| Bàn làm việc & Nhiệm vụ ca | GET /dashboard/staff, GET /dashboard/staff/tasks, GET /inventory (tra cứu nhanh) |
+| Tiếp nhận & Lịch nhập kho | GET /inbound-receipts, GET /inbound-receipts/status-counts, PATCH …/start |
+| Tiếp nhận & Xác nhận thực tế Nhập kho | GET /inbound-receipts/{id}, PATCH …/items/{itemId}/actual-quantity, PATCH …/confirm |
+| Kiểm đếm & Xác nhận thực tế | POST …/scan, PUT …/counting, GET …/discrepancy-report, PATCH …/confirm |
+| Chuẩn bị & Xuất kho | GET /outbound-orders, GET /outbound-orders/status-counts, PATCH …/start-preparing, …/items/{itemId}/actual-quantity, …/mark-packed, …/tracking, …/mark-in-delivery, GET …/handover-report |
+| Tra cứu Tồn kho theo Khách hàng & Sản phẩm | GET /inventory (customerId, keyword, stockStatus), PATCH /inventory/{id}/location |
+
+---

@@ -26,7 +26,7 @@ Hệ thống cung cấp dịch vụ tiếp nhận, lưu trữ và xuất hàng c
 | Điều hướng | React Router | Chuyển trang theo chức năng và vai trò |
 | Gọi API | Axios | Kết nối Frontend với Backend |
 | Backend | Java 17+ + Spring Boot 3.x | Xây dựng REST API |
-| ORM | Spring Data JPA + Hibernate | Ánh xạ entity và thao tác dữ liệu |
+| Quản lý schema DB | MySQL + SQL | Tạo cấu trúc database từ `docs/warehouse_db.sql`; Hibernate không tự sửa schema |
 | Bảo mật | Spring Security + OAuth2 Client | Đăng nhập Google, xác thực và phân quyền |
 | Database | MySQL | Lưu dữ liệu nghiệp vụ |
 | Thanh toán | VNPay Sandbox | Kiểm thử thanh toán trực tuyến |
