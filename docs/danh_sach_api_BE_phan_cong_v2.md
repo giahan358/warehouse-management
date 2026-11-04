@@ -1,7 +1,7 @@
 | **Thành viên** | **Công việc** |
 | --- | --- |
 | BE 1 – Huy Kỳ | Mục 2.1, 2.2, 2.3, 2.8 (bao gồm tích hợp đăng nhập tài khoản bằng email thật) |
-| BE 2 – Nhật Minh | Mục 2.4, 2.5, 2.6, 2.7 (bao gồm tích hợp thanh toán VNPay, gửi thông báo cho customer qua email) |
+| BE 2 – Tuấn Minh | Mục 2.4, 2.5, 2.6, 2.7 (bao gồm tích hợp thanh toán VNPay, gửi thông báo cho customer qua email) |
 
 Lưu ý: nên tạo tài khoản email riêng để phục vụ cho đồ án, không nên dùng email thật.
 
@@ -28,19 +28,83 @@ Trước khi code, cả 4 thành viên thống nhất các quy ước sau.
 
 Với dự án có Google OAuth2, nhóm có thể cân nhắc session cookie để đơn giản hóa việc đăng nhập Google. Nếu chọn cách này, cần cấu hình CORS, cookie và CSRF đúng cách.
 
+## API Response:
+1. Thành Công 
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "username": "john",
+    "email": "john@example.com",
+    "fullName": "John Smith"
+  },
+  "meta": null,
+  "message": "Lấy thông tin thành công"
+}   
+``
 
 Danh sách có phân trang:
 
 ```json
 {
-  "data": {
-    "content": [],
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "Football Open Play",
+      "status": "OPEN"
+    },
+    {
+      "id": 2,
+      "title": "Badminton Open Play",
+      "status": "FULL"
+    }
+  ],
+  "meta": {
     "page": 0,
     "size": 10,
     "totalElements": 25,
-    "totalPages": 3
+    "totalPages": 3,
+    "hasNext": true,
+    "hasPrevious": false
   },
-  "message": "Lấy danh sách thành công"
+  "message": "Lấy thông tin thành công"
+}
+```
+2. Thất bại
+404 NOT FOUND
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "Booking not found",
+    "details": null
+  }
+}
+```
+
+400 BAD REQUEST
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "email",
+        "message": "Email must be valid"
+      },
+      {
+        "field": "password",
+        "message": "Password must contain at least 8 characters"
+      }
+    ]
+  }
 }
 ```
 

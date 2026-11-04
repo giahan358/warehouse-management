@@ -77,14 +77,8 @@ backend/src/main/java/com/warehouse/
 │   ├── UserPrincipal.java
 │   └── CurrentUserService.java
 ├── common/
-│   ├── exception/
-│   │   ├── GlobalExceptionHandler.java
-│   │   ├── ResourceNotFoundException.java
-│   │   └── BusinessException.java
-│   ├── response/
-│   │   └── ApiResponse.java
-│   ├── enums/
-│   └── util/
+├── exception/
+├── response/
 ├── auth/
 │   ├── controller/
 │   │   └── AuthController.java
