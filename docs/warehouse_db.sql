@@ -41,11 +41,13 @@ CREATE TABLE `users` (
   `email` varchar(255) UNIQUE NOT NULL,
   `phone` varchar(20),
   `password_hash` varchar(255),
-  `google_id` varchar(255),
+  `google_id` varchar(255) UNIQUE,
   `login_method` varchar(20) NOT NULL DEFAULT 'EMAIL' COMMENT 'EMAIL hoặc GOOGLE',
   `role` varchar(30) NOT NULL COMMENT 'ADMIN, WAREHOUSE_STAFF, CUSTOMER',
   `status` varchar(20) NOT NULL COMMENT 'ACTIVE, LOCKED',
   `lock_reason` varchar(255) COMMENT 'Lý do khóa (nợ cước quá hạn...)',
+  `password_setup_token_hash` varchar(64),
+  `password_setup_expires_at` datetime,
   `created_at` datetime NOT NULL
 );
 
