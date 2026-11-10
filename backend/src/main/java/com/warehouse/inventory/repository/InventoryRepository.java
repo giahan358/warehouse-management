@@ -8,8 +8,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 
 public interface InventoryRepository extends JpaRepository<Inventory, Long> {
+    /** Locks the customer's inventory row while an outbound reservation is being changed. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Inventory i where i.customerId = :customerId and i.productId = :productId order by i.id")
+    java.util.List<Inventory> findLockedByCustomerAndProduct(
+            @Param("customerId") Long customerId, @Param("productId") Long productId);
+
     @Modifying
     @Query(
             value = """

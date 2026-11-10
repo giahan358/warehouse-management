@@ -148,12 +148,15 @@ CREATE TABLE `outbound_orders` (
   `order_code` varchar(50) UNIQUE NOT NULL,
   `customer_id` bigint NOT NULL,
   `created_by` bigint NOT NULL COMMENT 'User tạo đơn (khách hàng)',
+  `approved_by` bigint COMMENT 'Admin/Staff tiếp nhận đơn',
+  `approved_at` datetime,
   `recipient_name` varchar(150) NOT NULL,
   `recipient_phone` varchar(20) NOT NULL,
   `delivery_address` varchar(500) NOT NULL,
   `carrier` varchar(30) COMMENT 'GHN, GHTK, VIETTEL_POST, SELF_PICKUP',
   `tracking_code` varchar(50) COMMENT 'Mã vận đơn',
   `note` varchar(200),
+  `last_status_note` varchar(255) COMMENT 'Lý do hủy/hoàn đơn gần nhất',
   `status` varchar(30) NOT NULL COMMENT 'PENDING, PREPARING, PACKED, IN_DELIVERY, DELIVERED, RETURNED, CANCELLED',
   `payment_method` varchar(20) NOT NULL COMMENT 'COD, VNPAY',
   `cod_amount` decimal(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền thu hộ',
@@ -172,6 +175,7 @@ CREATE TABLE `outbound_order_items` (
   `product_id` bigint NOT NULL,
   `quantity_requested` decimal(12,3) NOT NULL,
   `quantity_actual` decimal(12,3),
+  `pick_note` varchar(255) COMMENT 'Ghi chú khi soạn thiếu hàng',
   `unit_price` decimal(15,2) NOT NULL COMMENT 'Phí dịch vụ kho trên mỗi đơn vị'
 );
 
@@ -192,6 +196,7 @@ CREATE TABLE `invoices` (
   `vat_amount` decimal(15,2) NOT NULL DEFAULT 0,
   `total_amount` decimal(15,2) NOT NULL,
   `status` varchar(20) NOT NULL COMMENT 'UNPAID, PAID, OVERDUE, CANCELLED',
+  `cancel_reason` varchar(255),
   `created_at` datetime NOT NULL,
   CONSTRAINT `chk_invoice_total` CHECK (`total_amount` = `amount` + `vat_amount`)
 );
@@ -343,6 +348,7 @@ ALTER TABLE `inbound_receipt_items` ADD FOREIGN KEY (`receipt_id`) REFERENCES `i
 ALTER TABLE `inbound_receipt_items` ADD FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`cod_confirmed_by`) REFERENCES `users` (`id`);
 ALTER TABLE `outbound_order_items` ADD FOREIGN KEY (`order_id`) REFERENCES `outbound_orders` (`id`);
 ALTER TABLE `outbound_order_items` ADD FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);

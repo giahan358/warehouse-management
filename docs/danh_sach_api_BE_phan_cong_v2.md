@@ -237,8 +237,8 @@ Ghi chú triển khai:
 | POST /outbound-orders `[SỬA]` | {recipientName, recipientPhone, deliveryAddress, paymentMethod, carrier?, codAmount?, note? (tối đa 200 ký tự), items: [{productId, quantityRequested}]} | Đơn xuất mới, trạng thái PENDING, orderCode tự sinh. BE tạm giữ allocatedQuantity ngay khi tạo | Customer |
 | GET /outbound-orders/{id} `[SỬA]` | Path id | Đơn + items: {itemId, productId, sku, productName, unit, quantityRequested, quantityActual, unitPrice} | Theo quyền sở hữu hoặc Staff/Admin |
 | POST /outbound-orders/{id}/items | {productId, quantityRequested} | Item mới (tạm giữ thêm tồn) | Chủ sở hữu, chỉ khi PENDING |
-| PATCH /outbound-orders/{id}/approve | Không có | Đơn được chấp nhận | Staff/Admin |
-| PATCH /outbound-orders/{id}/start-preparing | Không có | Đơn chuyển PREPARING; trừ tồn thực tế và tạm giữ | Staff/Admin |
+| PATCH /outbound-orders/{id}/approve | Không có | Ghi nhận Admin/Staff tiếp nhận đơn; đơn vẫn PENDING | Staff/Admin |
+| PATCH /outbound-orders/{id}/start-preparing | Không có | Đơn đã được tiếp nhận chuyển PREPARING; trừ tồn thực tế và tạm giữ | Staff/Admin |
 | PATCH /outbound-orders/{id}/items/{itemId}/actual-quantity `[MỚI]` | {quantityActual, note?} | Item đã cập nhật số lượng thực soạn. Nếu quantityActual < quantityRequested thì đánh dấu thiếu hàng (nút "Thiếu hàng") | Staff/Admin, chỉ khi PREPARING |
 | PATCH /outbound-orders/{id}/mark-packed `[MỚI]` | Không có | Đơn chuyển PACKED (nút "Xác nhận đóng gói") | Staff/Admin; chỉ từ PREPARING |
 | PATCH /outbound-orders/{id}/tracking `[MỚI]` | {carrier, trackingCode} | Cập nhật đơn vị vận chuyển và mã vận đơn | Staff/Admin |
@@ -251,6 +251,8 @@ Ghi chú triển khai:
 Lỗi riêng: 404 ORDER_NOT_FOUND, 409 INVALID_ORDER_STATUS, 409 INSUFFICIENT_STOCK, 403 ORDER_ACCESS_DENIED.
 
 Chuỗi trạng thái hợp lệ `[MỚI]`: PENDING → PREPARING → PACKED → IN_DELIVERY → DELIVERED hoặc RETURNED. CANCELLED chỉ từ PENDING. Mọi chuyển trạng thái khác trả 409 INVALID_ORDER_STATUS.
+
+`approve` lưu người tiếp nhận và thời điểm tiếp nhận riêng; do không có trạng thái APPROVED trong enum, đơn vẫn ở PENDING cho tới khi bắt đầu soạn. Khi RETURNED, Backend cộng lại số lượng thực đã gửi về kho vào inventory trong cùng transaction.
 
 Quy tắc tồn kho (chốt theo SQL gọn) `[MỚI]`:
 - Tạo đơn (PENDING): kiểm tra `quantity − allocatedQuantity ≥ quantityRequested`, nếu thiếu trả 409 INSUFFICIENT_STOCK; sau đó `allocatedQuantity += quantityRequested`.

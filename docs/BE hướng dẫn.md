@@ -240,6 +240,11 @@ Backend lấy thông tin kết nối từ biến môi trường:
 | `DB_PASSWORD` | Mật khẩu bạn đặt khi tạo MySQL user |
 | `MAIL_USERNAME` | Gmail dùng để gửi email thông báo; cần khi sử dụng tính năng mời nhân viên |
 | `MAIL_PASSWORD` | Google App Password (không phải mật khẩu đăng nhập Gmail); cần khi sử dụng email |
+| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Thông tin merchant của VNPay Sandbox; không đưa secret thật lên source control |
+| `VNPAY_PAY_URL` | URL thanh toán VNPay; mặc định là VNPay Sandbox |
+| `VNPAY_RETURN_URL` | URL callback trình duyệt của backend, ví dụ `http://localhost:8080/api/v1/payments/vnpay/return` |
+| `VNPAY_MOCK_ENABLED`, `SPRING_PROFILES_ACTIVE` | Chỉ bật mock IPN khi profile là `dev`/`development` và mock flag là `true` |
+| `ZONE_A_CAPACITY_M3`, `ZONE_B_CAPACITY_M3`, `ZONE_C_CAPACITY_M3` | Sức chứa cấu hình cho biểu đồ zone; mặc định `0` nghĩa là chưa cấu hình |
 | `JWT_SECRET` | Khóa ký JWT bí mật, tối thiểu 32 byte UTF-8; dùng cùng giá trị ở mọi instance Backend của một môi trường |
 | `JWT_EXPIRATION_SECONDS` | Thời hạn access token tính bằng giây; mặc định `3600` |
 | `JWT_ISSUER` | Issuer của JWT; mặc định `warehouse-api` và phải thống nhất giữa các instance |
@@ -255,6 +260,7 @@ Frontend chọn địa chỉ API bằng `VITE_API_BASE_URL` (ví dụ `https://a
 
 Không đưa `JWT_SECRET` hoặc thông tin xác thực Google vào source control. Tạo một secret riêng, ngẫu nhiên cho từng môi trường triển khai.
 Nếu chưa cấu hình SMTP, ứng dụng vẫn có thể khởi động nhưng thao tác gửi email mời nhân viên sẽ trả lỗi `EMAIL_NOT_CONFIGURED`.
+Nếu chưa cấu hình VNPay, tạo URL thanh toán trả `VNPAY_NOT_CONFIGURED`; thanh toán IPN thật cần cấu hình đúng merchant sandbox. Mock IPN mặc định tắt và chỉ hoạt động với profile phát triển.
 Danh sách CORS phải gồm origin đầy đủ dạng `http(s)://host[:port]`, không thêm path hoặc dấu `/` cuối. Backend không bật cookie credentials; frontend gửi access token qua header `Authorization: Bearer <token>`. Để kết nối từ máy khác, ngoài `SERVER_ADDRESS=0.0.0.0`, cần dùng IP/hostname backend mà trình duyệt truy cập được và mở cổng tương ứng trên firewall/network.
 
 Sau đó chạy backend:
