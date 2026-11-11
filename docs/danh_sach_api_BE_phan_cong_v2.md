@@ -20,13 +20,13 @@ Trước khi code, cả 4 thành viên thống nhất các quy ước sau.
 | ID | Số nguyên Long |
 | Tiền | Số thập phân, ví dụ 150000.00 |
 | Danh sách | Hỗ trợ phân trang bằng page, size; bộ lọc theo trạng thái khi cần |
-| Xác thực | Chọn session cookie hoặc JWT, chỉ dùng một cơ chế nhất quán |
+| Xác thực | JWT Bearer; gửi token qua header `Authorization: Bearer <accessToken>` |
 | Phân quyền | Backend kiểm tra vai trò, quyền sở hữu dữ liệu và trạng thái nghiệp vụ |
 | Response | Thống nhất một cấu trúc JSON cho thành công và lỗi |
 | API thay đổi trạng thái | Chỉ cho phép chuyển trạng thái hợp lệ; không nhận trạng thái tùy ý từ client |
 | Tính toán phía server `[MỚI]` | Các giá trị dẫn xuất (tồn khả dụng, thể tích, tổng tiền, VAT, mã chứng từ) do Backend tính, FE không gửi lên |
 
-Với dự án có Google OAuth2, nhóm có thể cân nhắc session cookie để đơn giản hóa việc đăng nhập Google. Nếu chọn cách này, cần cấu hình CORS, cookie và CSRF đúng cách.
+Đăng nhập email và Google đều trả về access token JWT. Backend xác minh Google ID token trước khi phát hành JWT của hệ thống.
 
 ## API Response:
 1. Thành Công 
@@ -49,26 +49,20 @@ Danh sách có phân trang:
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "id": 1,
-      "title": "Football Open Play",
-      "status": "OPEN"
-    },
-    {
-      "id": 2,
-      "title": "Badminton Open Play",
-      "status": "FULL"
-    }
-  ],
-  "meta": {
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "title": "Sản phẩm mẫu",
+        "status": "ACTIVE"
+      }
+    ],
     "page": 0,
     "size": 10,
     "totalElements": 25,
-    "totalPages": 3,
-    "hasNext": true,
-    "hasPrevious": false
+    "totalPages": 3
   },
+  "meta": null,
   "message": "Lấy thông tin thành công"
 }
 ```
@@ -92,7 +86,7 @@ Danh sách có phân trang:
 {
   "success": false,
   "error": {
-    "code": "VALIDATION_FAILED",
+    "code": "VALIDATION_ERROR",
     "message": "Request validation failed",
     "details": [
       {
@@ -120,13 +114,14 @@ Danh sách có phân trang:
 | stockStatus (tính ở BE) | SAFE (khả dụng > 100), LOW (≤ 100), OUT_OF_STOCK (= 0), NEAR_EXPIRY (HSD ≤ 20 ngày) |
 | inbound status | SCHEDULED, RECEIVING, CONFIRMED, CANCELLED |
 | outbound status | PENDING, PREPARING, PACKED, IN_DELIVERY, DELIVERED, RETURNED, CANCELLED |
-| carrier | GHN, VIETTEL_POST, SELF_PICKUP |
+| carrier | GHN, GHTK, VIETTEL_POST, SELF_PICKUP (GHTK hiện có trong dữ liệu mẫu/schema; GHN là lựa chọn vận chuyển đã thống nhất) |
 | codStatus | NONE, PENDING_RECONCILE, COLLECTED, CONFIRMED, RETURNED |
 | invoice status | UNPAID, PAID, OVERDUE, CANCELLED |
 | payment status | PENDING, SUCCESS, FAILED |
 | paymentMethod | VNPAY, COD |
 | loginMethod | EMAIL, GOOGLE |
 | inbound timeSlot | MORNING, AFTERNOON |
+| email notification status | PENDING, SENT, FAILED |
 ---
 
 ## 2. Bảng hợp đồng API: Endpoint, request, response, lỗi và quyền
@@ -138,29 +133,34 @@ Các request/response dưới đây là hợp đồng đề xuất để FE và 
 | **Method, endpoint** | **Request** | **Response chính** | **Quyền** |
 | --- | --- | --- | --- |
 | POST /auth/register | {fullName, email, password, phone?} | {userId, fullName, email, role, loginMethod} | Công khai; chỉ tạo Customer |
-| POST /auth/login `[SỬA]` | {email, password} | {data: {id, fullName, email, role, loginMethod}}; session cookie qua header. Tài khoản LOCKED trả 403 ACCOUNT_LOCKED | Công khai |
-| POST /auth/google `[MỚI]` | {idToken} | {data: {id, fullName, email, role, loginMethod: "GOOGLE"}}; session cookie | Công khai |
+| POST /auth/login `[SỬA]` | {email, password} | {data: {accessToken, tokenType: "Bearer", expiresIn, user: {id, fullName, email, role, loginMethod}}}. Tài khoản LOCKED trả 403 ACCOUNT_LOCKED | Công khai |
+| POST /auth/google `[MỚI]` | {idToken} | {data: {accessToken, tokenType: "Bearer", expiresIn, user: {id, fullName, email, role, loginMethod: "GOOGLE"}}} | Công khai |
+| POST /auth/setup-password `[MỚI]` | {token, password} | Tài khoản sau khi thiết lập mật khẩu lần đầu | Công khai; token email còn hạn |
 | GET /auth/me `[SỬA]` | Không có | {id, fullName, email, role, status, loginMethod, customerId?, customerCode?, businessName?} | Đã đăng nhập |
 | POST /auth/logout | Không có | Thông báo đăng xuất | Đã đăng nhập |
 | GET /users `[SỬA]` | Query page, size, keyword?, role?, status?, loginMethod? (GOOGLE\|EMAIL) | {id, fullName, email, phone, role, status, lockReason, loginMethod, organization} | Admin |
 | GET /users/summary `[MỚI]` | Không có | {totalUsers, customerCount, staffCount, lockedCount} (4 thẻ thống kê màn Tài khoản) | Admin |
 | GET /users/permission-matrix `[MỚI]` | Không có | Ma trận 6 nhóm chức năng × 3 vai trò (dữ liệu tĩnh trong BE, không có bảng DB) | Admin |
 | GET /users/{id} | Path id | Thông tin tài khoản | Admin |
-| POST /users | {fullName, email, phone?, role} | Tài khoản mới | Admin; chỉ tạo Staff theo MVP |
+| POST /users | {fullName, email, phone?, role} | Tài khoản mới; Backend gửi email thiết lập mật khẩu (token dùng một lần, hạn 24 giờ) | Admin; chỉ tạo Staff theo MVP |
 | PATCH /users/{id}/status `[SỬA]` | {status: "ACTIVE" \| "LOCKED", reason?} | {id, status, lockReason}. Khi LOCKED bắt buộc reason; không cho Admin tự khóa chính mình | Admin |
 | GET /customers `[SỬA]` | Query page, size, keyword?, servicePackage?, feeStatus?, accountStatus? | {id, customerCode, businessName, taxCode, legalRepresentative, phone, address, servicePackage, capacityM3, skuCount, totalUnits, feeStatus, outstandingDebt, accountStatus, userId, loginMethod} | Admin |
-| POST /customers `[SỬA]` | {userId, businessName, phone, address, taxCode?, legalRepresentative?, billingEmail?, servicePackage?, capacityM3?} | Hồ sơ khách hàng (customerCode tự sinh dạng CUST-VNxx) | Admin |
+| POST /customers `[SỬA]` | {userId, businessName, phone, address, taxCode?, legalRepresentative?, billingEmail?, servicePackage?, capacityM3?} | Hồ sơ khách hàng (customerCode tự sinh dạng CUST-VNxxxxxxxx) | Admin |
 | GET /customers/{id} `[SỬA]` | Path id | Hồ sơ đầy đủ + {usedM3, accountStatus, outstandingDebt} | Admin |
 | PUT /customers/{id} `[SỬA]` | {businessName, phone, address, taxCode?, legalRepresentative?, billingEmail?, servicePackage?, capacityM3?, bankName?, bankAccountNumber?, bankAccountHolder?} | Hồ sơ đã cập nhật | Admin |
 | GET /customers/me `[SỬA]` | Không có | Hồ sơ + tài nguyên kho: {capacityM3, usedM3, reservedInboundM3, remainingM3, usedPercent} | Customer |
 | PUT /customers/me `[SỬA]` | {businessName, phone, address, legalRepresentative?, billingEmail?, bankName?, bankAccountNumber?, bankAccountHolder?}. Không cho đổi taxCode, servicePackage, capacityM3 | Hồ sơ đã cập nhật | Customer |
 
-Google OAuth2 sử dụng redirect/callback của Spring Security, ví dụ /oauth2/authorization/google; không cần tự viết API nhận mật khẩu Google. Sau khi đăng nhập Google, nhóm phải thống nhất cách chuyển về FE và cách duy trì session. Tài khoản LOCKED bị chặn ở cả đăng nhập email và Google.
+Frontend gửi Google ID token tới `POST /auth/google`; Backend phải xác minh chữ ký, issuer, audience, thời hạn và `email_verified` trước khi phát hành JWT. Không nhận mật khẩu Google. Tài khoản LOCKED bị chặn ở cả đăng nhập email và Google.
+
+Tài khoản nhân viên tạo qua `POST /users` nhận email thiết lập mật khẩu; frontend gửi `{token, password}` lấy từ liên kết tới `POST /auth/setup-password`. Token chỉ dùng một lần, lưu dưới dạng SHA-256 hash và hết hạn sau 24 giờ.
 
 Ghi chú tính toán `[MỚI]`:
 - `usedM3` = tổng (inventory.quantity × products.volumeM3) của khách.
 - `reservedInboundM3` = tổng (expectedQuantity × volumeM3) của các phiếu nhập đang SCHEDULED hoặc RECEIVING.
 - `feeStatus`: OVERDUE nếu có hóa đơn OVERDUE, UNPAID nếu còn hóa đơn UNPAID, ngược lại PAID.
+
+Đăng ký tài khoản trong `/auth/register` chỉ tạo bản ghi `users`; Admin cần tạo hồ sơ doanh nghiệp bằng `POST /customers` trước khi khách hàng sử dụng `/customers/me`. Khách hàng không thể thay đổi `taxCode`, `servicePackage` hoặc `capacityM3` qua API self-service.
 
 Lỗi thường gặp: 400 VALIDATION_ERROR, 401 UNAUTHENTICATED, 403 FORBIDDEN, 403 ACCOUNT_LOCKED, 404 USER_NOT_FOUND, 409 EMAIL_ALREADY_EXISTS.
 
@@ -185,10 +185,13 @@ Lỗi riêng: 404 PRODUCT_NOT_FOUND, 403 PRODUCT_ACCESS_DENIED, 409 PRODUCT_HAS_
 
 Không cung cấp API cho bất kỳ ai tự sửa inventory.quantity. Số lượng chỉ thay đổi khi nghiệp vụ nhập/xuất được xác nhận hợp lệ.
 
+Sản phẩm chỉ được xóa vật lý khi chưa có bản ghi tồn kho, phiếu nhập hoặc đơn xuất tham chiếu; nếu đã phát sinh dữ liệu nghiệp vụ, API trả `409 PRODUCT_HAS_TRANSACTIONS`. Customer luôn bị ràng buộc theo tài khoản đăng nhập; `customerId` do client gửi chỉ được dùng bởi Admin.
+
 Ghi chú tính toán `[MỚI]`:
 - `available` = quantity − allocatedQuantity.
 - `zone` lấy từ ký tự thứ 2 của locationCode (ZA… = zone A).
 - `lastInboundAt` lấy từ phiếu nhập CONFIRMED gần nhất có chứa sản phẩm.
+- `stockStatus` ưu tiên `OUT_OF_STOCK` khi available ≤ 0, `NEAR_EXPIRY` khi còn hàng và hết hạn trong 20 ngày, `LOW` khi available ≤ 100, còn lại là `SAFE`.
 - Khách (Customer) không bao giờ thấy sản phẩm của khách khác: BE luôn ép customerId theo user đăng nhập.
 
 ### 2.3. Nhập kho (BE 1)
@@ -211,13 +214,19 @@ Ghi chú tính toán `[MỚI]`:
 | PATCH /inbound-receipts/{id}/cancel `[SỬA]` | {reason?} | Phiếu CANCELLED. Admin dùng endpoint này cho nút "Từ chối" | Customer chỉ khi SCHEDULED; Staff/Admin theo chính sách |
 | GET /inbound-receipts/{id}/discrepancy-report `[MỚI]` | Path id | Biên bản chênh lệch: các item có variance ≠ 0 hoặc damagedQuantity > 0, tổng thiếu/hỏng (nút "Biên bản") | Theo quyền sở hữu hoặc Staff/Admin |
 
-Lỗi riêng: 404 RECEIPT_NOT_FOUND, 409 INVALID_RECEIPT_STATUS, 409 RECEIPT_NOT_FULLY_COUNTED, 403 RECEIPT_ACCESS_DENIED.
+Lỗi riêng: 404 RECEIPT_NOT_FOUND, 404 PRODUCT_NOT_FOUND, 409 INVALID_RECEIPT_STATUS, 409 RECEIPT_NOT_FULLY_COUNTED, 409 BARCODE_AMBIGUOUS, 403 RECEIPT_ACCESS_DENIED.
 
 Khi xác nhận, Backend phải kiểm tra tất cả item đã được kiểm đếm và chỉ cộng tồn một lần (gọi lại trả 409 INVALID_RECEIPT_STATUS). Cập nhật trạng thái phiếu và tồn kho trong cùng transaction.
 
 Quy tắc số lượng `[MỚI]`: khi confirm, `inventory.quantity += actualQuantity` (hàng đạt). `damagedQuantity` chỉ lưu để lập biên bản, không cộng vào tồn. Đồng thời set `receivedAt = now`, `confirmedBy = user hiện tại`, và gán `inventory.locationCode` theo locationCode của item nếu có.
 
 Quy tắc Khách hàng: sửa/hủy phiếu chỉ khi SCHEDULED. Từ RECEIVING trở đi trả 409 INVALID_RECEIPT_STATUS.
+
+Ghi chú triển khai:
+- `actualQuantity` là số lượng hàng đạt; `damagedQuantity` được lưu riêng và không tính vào tồn. `variance = actualQuantity - expectedQuantity`; khi chưa kiểm đếm đủ, variance tổng chưa được xác định.
+- `/counting` phải gửi đủ và không lặp toàn bộ `itemId` của phiếu. `/scan` mặc định cộng 1 nếu không gửi quantity; barcode phải xác định duy nhất một sản phẩm của khách hàng trên phiếu.
+- Xác nhận phiếu khóa phiếu và cập nhật tồn kho cùng transaction; chỉ phiếu `RECEIVING` được xác nhận và xác nhận lặp lại trả `409 INVALID_RECEIPT_STATUS`.
+- Customer chỉ xem/sửa phiếu của mình; Admin/Staff xem và xử lý phiếu trong kho. Customer chỉ được sửa hoặc hủy phiếu `SCHEDULED`; Admin/Staff có thể hủy phiếu `SCHEDULED` hoặc `RECEIVING`.
 
 ### 2.4. Xuất kho (BE 2)
 
@@ -228,8 +237,8 @@ Quy tắc Khách hàng: sửa/hủy phiếu chỉ khi SCHEDULED. Từ RECEIVING 
 | POST /outbound-orders `[SỬA]` | {recipientName, recipientPhone, deliveryAddress, paymentMethod, carrier?, codAmount?, note? (tối đa 200 ký tự), items: [{productId, quantityRequested}]} | Đơn xuất mới, trạng thái PENDING, orderCode tự sinh. BE tạm giữ allocatedQuantity ngay khi tạo | Customer |
 | GET /outbound-orders/{id} `[SỬA]` | Path id | Đơn + items: {itemId, productId, sku, productName, unit, quantityRequested, quantityActual, unitPrice} | Theo quyền sở hữu hoặc Staff/Admin |
 | POST /outbound-orders/{id}/items | {productId, quantityRequested} | Item mới (tạm giữ thêm tồn) | Chủ sở hữu, chỉ khi PENDING |
-| PATCH /outbound-orders/{id}/approve | Không có | Đơn được chấp nhận | Staff/Admin |
-| PATCH /outbound-orders/{id}/start-preparing | Không có | Đơn chuyển PREPARING; trừ tồn thực tế và tạm giữ | Staff/Admin |
+| PATCH /outbound-orders/{id}/approve | Không có | Ghi nhận Admin/Staff tiếp nhận đơn; đơn vẫn PENDING | Staff/Admin |
+| PATCH /outbound-orders/{id}/start-preparing | Không có | Đơn đã được tiếp nhận chuyển PREPARING; trừ tồn thực tế và tạm giữ | Staff/Admin |
 | PATCH /outbound-orders/{id}/items/{itemId}/actual-quantity `[MỚI]` | {quantityActual, note?} | Item đã cập nhật số lượng thực soạn. Nếu quantityActual < quantityRequested thì đánh dấu thiếu hàng (nút "Thiếu hàng") | Staff/Admin, chỉ khi PREPARING |
 | PATCH /outbound-orders/{id}/mark-packed `[MỚI]` | Không có | Đơn chuyển PACKED (nút "Xác nhận đóng gói") | Staff/Admin; chỉ từ PREPARING |
 | PATCH /outbound-orders/{id}/tracking `[MỚI]` | {carrier, trackingCode} | Cập nhật đơn vị vận chuyển và mã vận đơn | Staff/Admin |
@@ -242,6 +251,8 @@ Quy tắc Khách hàng: sửa/hủy phiếu chỉ khi SCHEDULED. Từ RECEIVING 
 Lỗi riêng: 404 ORDER_NOT_FOUND, 409 INVALID_ORDER_STATUS, 409 INSUFFICIENT_STOCK, 403 ORDER_ACCESS_DENIED.
 
 Chuỗi trạng thái hợp lệ `[MỚI]`: PENDING → PREPARING → PACKED → IN_DELIVERY → DELIVERED hoặc RETURNED. CANCELLED chỉ từ PENDING. Mọi chuyển trạng thái khác trả 409 INVALID_ORDER_STATUS.
+
+`approve` lưu người tiếp nhận và thời điểm tiếp nhận riêng; do không có trạng thái APPROVED trong enum, đơn vẫn ở PENDING cho tới khi bắt đầu soạn. Khi RETURNED, Backend cộng lại số lượng thực đã gửi về kho vào inventory trong cùng transaction.
 
 Quy tắc tồn kho (chốt theo SQL gọn) `[MỚI]`:
 - Tạo đơn (PENDING): kiểm tra `quantity − allocatedQuantity ≥ quantityRequested`, nếu thiếu trả 409 INSUFFICIENT_STOCK; sau đó `allocatedQuantity += quantityRequested`.
@@ -335,12 +346,13 @@ Gửi tự động `[MỚI]`: khi đơn xuất chuyển IN_DELIVERY (`mark-in-de
 | 403 | FORBIDDEN | Không có quyền thực hiện |
 | 403 | ACCOUNT_LOCKED `[MỚI]` | Tài khoản bị khóa, không được đăng nhập |
 | 404 | RESOURCE_NOT_FOUND | Không tìm thấy dữ liệu |
+| 405 | METHOD_NOT_ALLOWED | HTTP method không được hỗ trợ cho endpoint |
 | 409 | RESOURCE_CONFLICT | Trùng dữ liệu hoặc sai trạng thái nghiệp vụ |
 | 409 | INSUFFICIENT_STOCK | Tồn kho không đủ |
+| 415 | UNSUPPORTED_MEDIA_TYPE | Content-Type request không được hỗ trợ |
 | 422 | BUSINESS_RULE_VIOLATION | Vi phạm quy tắc nghiệp vụ |
 | 500 | INTERNAL_ERROR | Lỗi hệ thống |
 
 Ngoài các mã chung, có thể dùng mã riêng đã liệt kê trong từng nhóm API. FE nên xử lý theo error.code, không phụ thuộc vào nội dung câu message.
 
 ---
-
