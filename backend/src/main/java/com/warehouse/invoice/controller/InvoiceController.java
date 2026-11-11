@@ -11,6 +11,8 @@ import com.warehouse.invoice.dto.InvoiceListResponse;
 import com.warehouse.invoice.dto.InvoiceSummaryResponse;
 import com.warehouse.invoice.dto.PaymentUrlResponse;
 import com.warehouse.invoice.service.InvoiceService;
+import com.warehouse.security.SessionPrincipal;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import com.warehouse.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -18,7 +20,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@SecurityRequirement(name = "bearerAuth")
 public class InvoiceController {
     private final InvoiceService invoiceService;
     private final PaymentService paymentService;
@@ -68,7 +70,7 @@ public class InvoiceController {
     @GetMapping("/invoices/me")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ApiResponse<PageResponse<InvoiceListResponse>> getMyInvoices(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
             @PageableDefault(size = 10) Pageable pageable) {
@@ -78,14 +80,14 @@ public class InvoiceController {
 
     @GetMapping("/invoices/me/current")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ApiResponse<CurrentInvoiceResponse> getCurrent(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<CurrentInvoiceResponse> getCurrent(@AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(invoiceService.getCurrentInvoice(jwt.getSubject()),
                 "Lấy hóa đơn cần thanh toán thành công");
     }
 
     @GetMapping("/invoices/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER')")
-    public ApiResponse<InvoiceDetailResponse> getById(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<InvoiceDetailResponse> getById(@PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(invoiceService.getById(id, jwt.getSubject(), isAdmin(jwt)),
                 "Lấy chi tiết hóa đơn thành công");
     }
@@ -100,7 +102,7 @@ public class InvoiceController {
 
     @PostMapping("/invoices/{id}/send-email")
     @PreAuthorize("hasRole('ADMIN')")
-    public ApiResponse<Void> sendEmail(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<Void> sendEmail(@PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         invoiceService.sendEmail(id, jwt.getSubject());
         return ApiResponse.success(null, "Đã gửi hóa đơn qua email");
     }
@@ -109,12 +111,12 @@ public class InvoiceController {
     @PreAuthorize("hasRole('CUSTOMER')")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<PaymentUrlResponse> createVnpayPayment(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+            @PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(paymentService.createVnpayPayment(id, jwt.getSubject()),
                 "Tạo liên kết thanh toán thành công");
     }
 
-    private boolean isAdmin(Jwt jwt) {
-        return jwt.getClaimAsStringList("roles").contains("ADMIN");
+    private boolean isAdmin(SessionPrincipal jwt) {
+        return jwt.roles().contains("ADMIN");
     }
 }

@@ -9,6 +9,7 @@ import com.warehouse.inventory.dto.InventoryDetailResponse;
 import com.warehouse.inventory.dto.InventoryResponse;
 import com.warehouse.inventory.dto.UpdateInventoryLocationRequest;
 import com.warehouse.inventory.service.InventoryService;
+import com.warehouse.security.SessionPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
@@ -16,7 +17,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -64,7 +64,7 @@ public class InventoryController {
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "List inventory belonging to the authenticated customer")
     public ApiResponse<PageResponse<InventoryCustomerResponse>> getMyInventory(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String stockStatus,
             @PageableDefault(size = 10) Pageable pageable) {
@@ -76,7 +76,7 @@ public class InventoryController {
     @GetMapping("/me/summary")
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "Get current customer's total stock and occupied volume")
-    public ApiResponse<InventoryCustomerSummaryResponse> getMySummary(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<InventoryCustomerSummaryResponse> getMySummary(@AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(
                 inventoryService.getMySummary(jwt.getSubject()),
                 "Lấy thống kê tồn kho của bạn thành công");
@@ -86,7 +86,7 @@ public class InventoryController {
     @Operation(summary = "Get stock details for a product; customers can access only their own products")
     public ApiResponse<InventoryDetailResponse> getProductInventory(
             @PathVariable Long productId,
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(
                 inventoryService.getProductInventory(productId, jwt.getSubject(), currentRole(jwt)),
                 "Lấy chi tiết tồn kho thành công");
@@ -103,9 +103,7 @@ public class InventoryController {
                 "Cập nhật vị trí tồn kho thành công");
     }
 
-    private String currentRole(Jwt jwt) {
-        return jwt.getClaimAsStringList("roles").stream()
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Authenticated JWT is missing roles"));
+    private String currentRole(SessionPrincipal jwt) {
+        return jwt.role().name();
     }
 }

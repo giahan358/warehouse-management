@@ -11,13 +11,14 @@ import com.warehouse.dashboard.dto.StaffDashboardResponse;
 import com.warehouse.dashboard.dto.TenantUsageResponse;
 import com.warehouse.dashboard.dto.ZoneUsageResponse;
 import com.warehouse.dashboard.service.DashboardService;
+import com.warehouse.security.SessionPrincipal;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
+@SecurityRequirement(name = "bearerAuth")
 public class DashboardController {
     private final DashboardService dashboardService;
 
@@ -73,14 +75,14 @@ public class DashboardController {
 
     @GetMapping("/customer")
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ApiResponse<CustomerDashboardResponse> customerOverview(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<CustomerDashboardResponse> customerOverview(@AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(dashboardService.getCustomerOverview(jwt.getSubject()), "Lấy tổng quan kho của bạn thành công");
     }
 
     @GetMapping("/customer/operations")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ApiResponse<PageResponse<CustomerOperationResponse>> customerOperations(
-            @AuthenticationPrincipal Jwt jwt, @PageableDefault(size = 10) Pageable pageable) {
+            @AuthenticationPrincipal SessionPrincipal jwt, @PageableDefault(size = 10) Pageable pageable) {
         return ApiResponse.success(dashboardService.getCustomerOperations(jwt.getSubject(), pageable),
                 "Lấy hoạt động kho của bạn thành công");
     }

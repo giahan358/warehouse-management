@@ -1,4 +1,5 @@
 import axiosClient from './axiosClient'
+import { clearAccessToken } from './authToken'
 
 function unwrap(response) {
   const body = response.data
@@ -29,7 +30,13 @@ export function getApiErrorMessage(error) {
 
 export const customerApi = {
   getIdentity: async () => unwrap(await axiosClient.get('/auth/me')),
-  logout: async () => unwrap(await axiosClient.post('/auth/logout')),
+  logout: async () => {
+    try {
+      return unwrap(await axiosClient.post('/auth/logout'))
+    } finally {
+      clearAccessToken()
+    }
+  },
 
   dashboard: {
     getSummary: async () => unwrap(await axiosClient.get('/dashboard/customer')),
@@ -59,7 +66,6 @@ export const customerApi = {
     getStatusCounts: async (params) => unwrap(await axiosClient.get('/outbound-orders/status-counts', { params })),
     getById: async (id) => unwrap(await axiosClient.get(`/outbound-orders/${id}`)),
     create: async (payload) => unwrap(await axiosClient.post('/outbound-orders', payload)),
-    addItem: async (id, payload) => unwrap(await axiosClient.post(`/outbound-orders/${id}/items`, payload)),
     cancel: async (id, payload = {}) => unwrap(await axiosClient.patch(`/outbound-orders/${id}/cancel`, payload)),
   },
 

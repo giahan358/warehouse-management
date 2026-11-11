@@ -14,6 +14,7 @@ public interface UserService {
             String role,
             String status,
             String loginMethod,
+            Boolean hasCustomerProfile,
             Pageable pageable);
 
     UserSummaryResponse getSummary();

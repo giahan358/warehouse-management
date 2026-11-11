@@ -72,7 +72,7 @@ public class CustomerServiceImpl implements CustomerService {
         }
         if (customerRepository.existsByUserId(user.getId())) {
             throw new BusinessException(
-                    HttpStatus.CONFLICT, "CUSTOMER_PROFILE_ALREADY_EXISTS", "Tài khoản đã có hồ sơ khách hàng");
+                    HttpStatus.CONFLICT, "CUSTOMER_PROFILE_EXISTS", "Tài khoản đã có hồ sơ khách hàng");
         }
 
         Customer customer = new Customer();

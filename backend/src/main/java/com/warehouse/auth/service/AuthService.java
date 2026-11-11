@@ -1,7 +1,7 @@
 package com.warehouse.auth.service;
 
-import com.warehouse.auth.dto.AuthTokenResponse;
 import com.warehouse.auth.dto.AuthUserResponse;
+import com.warehouse.auth.dto.ChangePasswordRequest;
 import com.warehouse.auth.dto.LoginRequest;
 import com.warehouse.auth.dto.RegisterRequest;
 import com.warehouse.auth.dto.SetupPasswordRequest;
@@ -9,15 +9,14 @@ import com.warehouse.common.enums.LoginMethod;
 import com.warehouse.common.enums.UserRole;
 import com.warehouse.common.enums.UserStatus;
 import com.warehouse.common.exception.BusinessException;
-import com.warehouse.security.GoogleIdTokenVerifier;
-import com.warehouse.security.JwtService;
-import com.warehouse.user.service.AccountInvitationService;
+import com.warehouse.customer.model.Customer;
+import com.warehouse.customer.repository.CustomerRepository;
 import com.warehouse.user.model.User;
 import com.warehouse.user.repository.UserRepository;
+import com.warehouse.user.service.AccountInvitationService;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,21 +28,18 @@ public class AuthService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final UserRepository userRepository;
+    private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final GoogleIdTokenVerifier googleIdTokenVerifier;
     private final AccountInvitationService accountInvitationService;
 
     public AuthService(
             UserRepository userRepository,
+            CustomerRepository customerRepository,
             PasswordEncoder passwordEncoder,
-            JwtService jwtService,
-            GoogleIdTokenVerifier googleIdTokenVerifier,
             AccountInvitationService accountInvitationService) {
         this.userRepository = userRepository;
+        this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-        this.googleIdTokenVerifier = googleIdTokenVerifier;
         this.accountInvitationService = accountInvitationService;
     }
 
@@ -64,61 +60,48 @@ public class AuthService {
         user.setRole(UserRole.CUSTOMER);
         user.setStatus(UserStatus.ACTIVE);
         user.setCreatedAt(LocalDateTime.now(BUSINESS_ZONE));
-        return AuthUserResponse.from(userRepository.save(user));
+        return response(userRepository.save(user), null);
     }
 
     @Transactional(readOnly = true)
-    public AuthTokenResponse login(LoginRequest request) {
+    public AuthUserResponse login(LoginRequest request) {
         User user = userRepository.findByEmailIgnoreCase(normalizeEmail(request.email()))
                 .orElseThrow(this::invalidCredentials);
         ensureActive(user);
-        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72
+                || user.getPasswordHash() == null
+                || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw invalidCredentials();
         }
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw invalidCredentials();
-        }
-        return issueToken(user);
+        return response(user, findCustomer(user.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public AuthUserResponse devLogin(String email) {
+        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        ensureActive(user);
+        return response(user, findCustomer(user.getId()));
     }
 
     @Transactional
-    public AuthTokenResponse loginWithGoogle(String idToken) {
-        Map<String, Object> googleClaims = googleIdTokenVerifier.verify(idToken);
-        String googleId = (String) googleClaims.get("sub");
-        String googleEmail = (String) googleClaims.get("email");
-        if (googleId == null || googleEmail == null || googleEmail.isBlank()) {
-            throw new BusinessException(
-                    HttpStatus.UNAUTHORIZED, "INVALID_GOOGLE_TOKEN", "Google ID token thiếu thông tin tài khoản");
-        }
-        String email = normalizeEmail(googleEmail);
-        String fullName = (String) googleClaims.getOrDefault("name", email);
-        if (fullName == null || fullName.isBlank()) {
-            fullName = email;
-        }
-        String resolvedFullName = fullName;
-
-        User user = userRepository.findByGoogleId(googleId).orElseGet(() -> {
-            User sameEmailUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
-            if (sameEmailUser != null) {
-                throw new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "ACCOUNT_LINK_REQUIRED",
-                        "Email đã được đăng ký bằng phương thức khác");
-            }
-
-            User newUser = new User();
-            newUser.setFullName(resolvedFullName);
-            newUser.setEmail(email);
-            newUser.setGoogleId(googleId);
-            newUser.setLoginMethod(LoginMethod.GOOGLE);
-            newUser.setRole(UserRole.CUSTOMER);
-            newUser.setStatus(UserStatus.ACTIVE);
-            newUser.setCreatedAt(LocalDateTime.now(BUSINESS_ZONE));
-            return userRepository.save(newUser);
-        });
-
+    public AuthUserResponse changePassword(String email, ChangePasswordRequest request) {
+        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Tài khoản không còn tồn tại"));
         ensureActive(user);
-        return issueToken(user);
+        validatePasswordLength(request.newPassword());
+        if (user.getPasswordHash() == null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Tài khoản Google chưa có mật khẩu hiện tại");
+        }
+        if (request.currentPassword().getBytes(StandardCharsets.UTF_8).length > 72
+                || !passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw invalidCredentials();
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        return response(userRepository.save(user), findCustomer(user.getId()));
     }
 
     @Transactional
@@ -136,25 +119,24 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setPasswordSetupTokenHash(null);
         user.setPasswordSetupExpiresAt(null);
-        return AuthUserResponse.from(userRepository.save(user));
+        return response(userRepository.save(user), findCustomer(user.getId()));
     }
 
     @Transactional(readOnly = true)
     public AuthUserResponse getCurrentUser(String email) {
-        User user = userRepository.findByEmailIgnoreCase(email)
+        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Tài khoản không còn tồn tại"));
         ensureActive(user);
-        return AuthUserResponse.from(user);
+        return response(user, findCustomer(user.getId()));
     }
 
-    private AuthTokenResponse issueToken(User user) {
-        String accessToken = jwtService.createToken(user);
-        return new AuthTokenResponse(
-                accessToken,
-                "Bearer",
-                jwtService.getExpirationSeconds(),
-                AuthUserResponse.from(user));
+    private AuthUserResponse response(User user, Customer customer) {
+        return AuthUserResponse.from(user, customer);
+    }
+
+    private Customer findCustomer(Long userId) {
+        return customerRepository.findByUserId(userId).orElse(null);
     }
 
     private void ensureActive(User user) {
@@ -179,9 +161,12 @@ public class AuthService {
     }
 
     private void validatePasswordLength(String password) {
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        int length = password.getBytes(StandardCharsets.UTF_8).length;
+        if (password.length() < 8 || length > 72) {
             throw new BusinessException(
-                    HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Mật khẩu không được vượt quá 72 byte UTF-8");
+                    HttpStatus.BAD_REQUEST,
+                    "VALIDATION_ERROR",
+                    "Mật khẩu phải có ít nhất 8 ký tự và không vượt quá 72 byte UTF-8");
         }
     }
 }

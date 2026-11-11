@@ -8,13 +8,13 @@ import com.warehouse.user.dto.UserPermissionMatrixResponse;
 import com.warehouse.user.dto.UserResponse;
 import com.warehouse.user.dto.UserSummaryResponse;
 import com.warehouse.user.service.UserService;
+import com.warehouse.security.SessionPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -43,9 +43,10 @@ public class UserController {
             @RequestParam(required = false) String role,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String loginMethod,
+            @RequestParam(required = false) Boolean hasCustomerProfile,
             @PageableDefault(size = 10) Pageable pageable) {
         return ApiResponse.success(
-                userService.getUsers(keyword, role, status, loginMethod, pageable),
+                userService.getUsers(keyword, role, status, loginMethod, hasCustomerProfile, pageable),
                 "Lấy danh sách tài khoản thành công");
     }
 
@@ -78,7 +79,7 @@ public class UserController {
     public ApiResponse<UserResponse> updateStatus(
             @PathVariable Long id,
             @Valid @RequestBody UpdateUserRequest request,
-            @AuthenticationPrincipal Jwt currentUser) {
+            @AuthenticationPrincipal SessionPrincipal currentUser) {
         return ApiResponse.success(
                 userService.updateStatus(id, request, currentUser.getSubject()),
                 "Cập nhật trạng thái tài khoản thành công");

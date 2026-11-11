@@ -30,6 +30,8 @@ import com.warehouse.inbound.repository.InboundReceiptRepository;
 import com.warehouse.inbound.repository.InboundReceiptSummaryProjection;
 import com.warehouse.inbound.repository.InboundStatusCountsProjection;
 import com.warehouse.inventory.repository.InventoryRepository;
+import com.warehouse.invoice.repository.InvoiceRepository;
+import com.warehouse.common.enums.InvoiceStatus;
 import com.warehouse.product.model.Product;
 import com.warehouse.product.repository.ProductRepository;
 import com.warehouse.user.model.User;
@@ -66,6 +68,7 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final InventoryRepository inventoryRepository;
+    private final InvoiceRepository invoiceRepository;
 
     public InboundReceiptServiceImpl(
             InboundReceiptRepository receiptRepository,
@@ -73,13 +76,15 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
             CustomerRepository customerRepository,
             ProductRepository productRepository,
             UserRepository userRepository,
-            InventoryRepository inventoryRepository) {
+            InventoryRepository inventoryRepository,
+            InvoiceRepository invoiceRepository) {
         this.receiptRepository = receiptRepository;
         this.itemRepository = itemRepository;
         this.customerRepository = customerRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
         this.inventoryRepository = inventoryRepository;
+        this.invoiceRepository = invoiceRepository;
     }
 
     @Override
@@ -138,6 +143,28 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
 
         User user = findUser(email);
         validateUniqueProducts(request.items());
+        Customer customer = customerRepository.findLockedById(customerId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "CUSTOMER_NOT_FOUND", "Không tìm thấy khách hàng"));
+        ensureNoOverdueDebt(customerId);
+        BigDecimal requestedVolume = BigDecimal.ZERO;
+        List<Product> products = new ArrayList<>();
+        for (InboundItemRequest itemRequest : request.items()) {
+            Product product = findOwnedProduct(itemRequest.productId(), customerId);
+            if (product.getStatus() != com.warehouse.common.enums.ProductStatus.ACTIVE) {
+                throw badRequest("Không thể tạo phiếu nhập với sản phẩm đang ẩn");
+            }
+            if (product.getVolumeM3() == null) {
+                throw badRequest("Cần khai báo đầy đủ kích thước sản phẩm trước khi đặt lịch nhập");
+            }
+            requestedVolume = requestedVolume.add(product.getVolumeM3().multiply(itemRequest.expectedQuantity()));
+            products.add(product);
+        }
+        BigDecimal usedVolume = customerRepository.sumStoredVolume(customerId);
+        BigDecimal reservedVolume = customerRepository.sumReservedInboundVolume(customerId);
+        if (usedVolume.add(reservedVolume).add(requestedVolume).compareTo(customer.getCapacityM3()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT, "CAPACITY_EXCEEDED", "Phiếu nhập vượt quá dung tích kho đã đăng ký");
+        }
         InboundReceipt receipt = new InboundReceipt();
         LocalDateTime now = now();
         receipt.setReceiptCode("NK-" + now.format(RECEIPT_MONTH) + "-" + UUID.randomUUID());
@@ -152,8 +179,9 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
         receipt = receiptRepository.saveAndFlush(receipt);
 
         List<InboundReceiptItem> items = new ArrayList<>();
-        for (InboundItemRequest itemRequest : request.items()) {
-            Product product = findOwnedProduct(itemRequest.productId(), customerId);
+        for (int i = 0; i < request.items().size(); i++) {
+            InboundItemRequest itemRequest = request.items().get(i);
+            Product product = products.get(i);
             items.add(newItem(receipt.getId(), product.getId(), itemRequest.expectedQuantity()));
         }
         itemRepository.saveAllAndFlush(items);
@@ -497,6 +525,13 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
         return userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Tài khoản không còn tồn tại"));
+    }
+
+    private void ensureNoOverdueDebt(Long customerId) {
+        if (invoiceRepository.existsByCustomerIdAndStatus(customerId, InvoiceStatus.OVERDUE)) {
+            throw new BusinessException(
+                    HttpStatus.UNPROCESSABLE_CONTENT, "OVERDUE_DEBT", "Còn hóa đơn quá hạn chưa thanh toán");
+        }
     }
 
     private UserRole parseRole(String value) {

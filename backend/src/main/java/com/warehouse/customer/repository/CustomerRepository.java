@@ -1,7 +1,10 @@
 package com.warehouse.customer.repository;
 
 import com.warehouse.customer.model.Customer;
+import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +17,26 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     boolean existsByCustomerCode(String customerCode);
 
     Optional<Customer> findByUserId(Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Customer c where c.id = :id")
+    Optional<Customer> findLockedById(@Param("id") Long id);
+
+    @Query(value = """
+            select coalesce(sum(i.quantity * p.volume_m3), 0)
+            from inventory i join products p on p.id = i.product_id
+            where i.customer_id = :customerId
+            """, nativeQuery = true)
+    BigDecimal sumStoredVolume(@Param("customerId") Long customerId);
+
+    @Query(value = """
+            select coalesce(sum(ri.expected_quantity * p.volume_m3), 0)
+            from inbound_receipts r
+            join inbound_receipt_items ri on ri.receipt_id = r.id
+            join products p on p.id = ri.product_id
+            where r.customer_id = :customerId and r.status in ('SCHEDULED', 'RECEIVING')
+            """, nativeQuery = true)
+    BigDecimal sumReservedInboundVolume(@Param("customerId") Long customerId);
 
     @Query(
             value = """

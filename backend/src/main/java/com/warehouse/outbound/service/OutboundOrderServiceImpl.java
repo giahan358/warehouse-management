@@ -12,6 +12,8 @@ import com.warehouse.customer.model.Customer;
 import com.warehouse.customer.repository.CustomerRepository;
 import com.warehouse.inventory.model.Inventory;
 import com.warehouse.inventory.repository.InventoryRepository;
+import com.warehouse.invoice.repository.InvoiceRepository;
+import com.warehouse.common.enums.InvoiceStatus;
 import com.warehouse.outbound.dto.CreateOutboundOrderRequest;
 import com.warehouse.outbound.dto.OutboundItemRequest;
 import com.warehouse.outbound.dto.OutboundItemResponse;
@@ -27,14 +29,12 @@ import com.warehouse.outbound.repository.OutboundOrderRepository;
 import com.warehouse.outbound.repository.OutboundStatusCountProjection;
 import com.warehouse.product.model.Product;
 import com.warehouse.product.repository.ProductRepository;
-import com.warehouse.security.JwtService;
 import com.warehouse.user.model.User;
 import com.warehouse.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -63,18 +63,21 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final InvoiceRepository invoiceRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public OutboundOrderServiceImpl(OutboundOrderRepository orderRepository,
             OutboundOrderItemRepository itemRepository, InventoryRepository inventoryRepository,
             ProductRepository productRepository, CustomerRepository customerRepository,
-            UserRepository userRepository, ApplicationEventPublisher eventPublisher) {
+            UserRepository userRepository, InvoiceRepository invoiceRepository,
+            ApplicationEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.itemRepository = itemRepository;
         this.inventoryRepository = inventoryRepository;
         this.productRepository = productRepository;
         this.customerRepository = customerRepository;
         this.userRepository = userRepository;
+        this.invoiceRepository = invoiceRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -137,6 +140,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundOrderDetailResponse create(String email, CreateOutboundOrderRequest request) {
         User user = findUser(email);
         Customer customer = ownCustomer(email);
+        ensureNoOverdueDebt(customer.getId());
         validateUniqueProducts(request.items());
         BigDecimal codAmount = request.codAmount() == null ? ZERO : request.codAmount();
         if (codAmount.signum() < 0 || (request.paymentMethod() == PaymentMethod.COD && codAmount.signum() <= 0)
@@ -187,59 +191,12 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return detail(order, customerName(order.getCustomerId()), itemRepository.findByOrderIdOrderById(id));
     }
 
-    /** Adds an order item while the owning customer order is still pending and reserves stock. */
-    @Override
-    @Transactional
-    public OutboundOrderDetailResponse addItem(Long id, String email, OutboundItemRequest request) {
-        OutboundOrder order = lockOrder(id);
-        authorizeOwner(order, email);
-        requireStatus(order, OutboundStatus.PENDING);
-        if (itemRepository.findByOrderIdOrderById(id).stream().anyMatch(i -> i.getProductId().equals(request.productId()))) {
-            throw badRequest("Sản phẩm đã có trong đơn xuất");
-        }
-        Product product = findOwnedActiveProduct(request.productId(), order.getCustomerId());
-        Inventory inventory = lockInventory(order.getCustomerId(), product.getId());
-        BigDecimal available = inventory.getQuantity().subtract(inventory.getAllocatedQuantity());
-        if (available.compareTo(request.quantityRequested()) < 0) {
-            throw new BusinessException(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "Tồn kho khả dụng không đủ");
-        }
-        inventory.setAllocatedQuantity(inventory.getAllocatedQuantity().add(request.quantityRequested()));
-        inventoryRepository.save(inventory);
-        OutboundOrderItem item = itemRepository.save(newItem(id, product.getId(), request.quantityRequested()));
-        return detail(order, customerName(order.getCustomerId()), itemRepository.findByOrderIdOrderById(id));
-    }
-
-    /** Acknowledges a pending order; the database has no separate approved status or approval column. */
-    @Override
-    @Transactional
-    public OutboundOrderDetailResponse approve(Long id, String adminEmail) {
-        OutboundOrder order = lockOrder(id);
-        requireStatus(order, OutboundStatus.PENDING);
-        List<OutboundOrderItem> items = itemRepository.findByOrderIdOrderById(id);
-        for (OutboundOrderItem item : items) {
-            Inventory inventory = lockInventory(order.getCustomerId(), item.getProductId());
-            if (inventory.getAllocatedQuantity().compareTo(item.getQuantityRequested()) < 0) {
-                throw new BusinessException(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "Phần tồn giữ cho đơn không còn hợp lệ");
-            }
-        }
-        User adminOrStaff = findUser(adminEmail);
-        if (order.getApprovedAt() == null) {
-            order.setApprovedBy(adminOrStaff.getId());
-            order.setApprovedAt(now());
-            orderRepository.save(order);
-        }
-        return detail(order, customerName(order.getCustomerId()), items);
-    }
-
     /** Moves a pending order to preparation and consumes the reserved on-hand quantities. */
     @Override
     @Transactional
     public OutboundOrderDetailResponse startPreparing(Long id) {
         OutboundOrder order = lockOrder(id);
         requireStatus(order, OutboundStatus.PENDING);
-        if (order.getApprovedAt() == null) {
-            throw new BusinessException(HttpStatus.CONFLICT, "INVALID_ORDER_STATUS", "Nhân viên cần tiếp nhận đơn trước khi bắt đầu soạn");
-        }
         List<OutboundOrderItem> items = itemRepository.findByOrderIdOrderById(id);
         for (OutboundOrderItem item : items) {
             Inventory inventory = lockInventory(order.getCustomerId(), item.getProductId());
@@ -266,8 +223,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         OutboundOrder order = lockOrder(id);
         requireStatus(order, OutboundStatus.PREPARING);
         OutboundOrderItem item = findItem(id, itemId);
-        if (request.quantityActual().compareTo(item.getQuantityRequested()) > 0) {
-            throw badRequest("quantityActual không được lớn hơn quantityRequested");
+        if (request.quantityActual().signum() < 0
+                || request.quantityActual().compareTo(item.getQuantityRequested()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, "INVALID_QUANTITY", "quantityActual phải từ 0 đến quantityRequested");
         }
         Inventory inventory = lockInventory(order.getCustomerId(), item.getProductId());
         BigDecimal previousActual = item.getQuantityActual() == null ? ZERO : item.getQuantityActual();
@@ -464,6 +423,13 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private User findUser(String email) {
         return userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Tài khoản không tồn tại"));
+    }
+
+    private void ensureNoOverdueDebt(Long customerId) {
+        if (invoiceRepository.existsByCustomerIdAndStatus(customerId, InvoiceStatus.OVERDUE)) {
+            throw new BusinessException(
+                    HttpStatus.UNPROCESSABLE_CONTENT, "OVERDUE_DEBT", "Còn hóa đơn quá hạn chưa thanh toán");
+        }
     }
 
     private String customerName(Long customerId) {

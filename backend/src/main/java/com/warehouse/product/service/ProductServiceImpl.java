@@ -140,19 +140,6 @@ public class ProductServiceImpl implements ProductService {
         return saveAndRead(product);
     }
 
-    @Override
-    @Transactional
-    public void delete(Long id) {
-        Product product = productRepository.findById(id).orElseThrow(() -> productNotFound(id));
-        if (productRepository.hasBusinessReferences(id)) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "PRODUCT_HAS_TRANSACTIONS",
-                    "Không thể xóa sản phẩm đã có tồn kho, phiếu nhập hoặc đơn xuất");
-        }
-        productRepository.delete(product);
-    }
-
     private ProductResponse saveAndRead(Product product) {
         try {
             Product saved = productRepository.saveAndFlush(product);

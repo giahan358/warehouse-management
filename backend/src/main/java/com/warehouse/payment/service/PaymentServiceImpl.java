@@ -6,7 +6,6 @@ import com.warehouse.common.enums.InvoiceStatus;
 import com.warehouse.common.enums.OutboundStatus;
 import com.warehouse.common.enums.PaymentMethod;
 import com.warehouse.common.enums.PaymentStatus;
-import com.warehouse.common.enums.UserRole;
 import com.warehouse.common.exception.BusinessException;
 import com.warehouse.common.exception.ResourceNotFoundException;
 import com.warehouse.common.response.PageResponse;
@@ -19,6 +18,8 @@ import com.warehouse.outbound.model.OutboundOrder;
 import com.warehouse.outbound.repository.CodSummaryProjection;
 import com.warehouse.outbound.repository.OutboundOrderRepository;
 import com.warehouse.payment.dto.CodOrderResponse;
+import com.warehouse.payment.dto.CodConfirmationResponse;
+import com.warehouse.payment.dto.CodPaidInvoiceResponse;
 import com.warehouse.payment.dto.CodSummaryResponse;
 import com.warehouse.payment.dto.PaymentResponse;
 import com.warehouse.payment.dto.VnpayIpnResponse;
@@ -28,7 +29,6 @@ import com.warehouse.user.model.User;
 import com.warehouse.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,9 +50,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class PaymentServiceImpl implements PaymentService {
+    private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final DateTimeFormatter VNPAY_DATE = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private final PaymentRepository paymentRepository;
@@ -136,8 +139,12 @@ public class PaymentServiceImpl implements PaymentService {
     public com.warehouse.payment.dto.VnpayIpnResponse processVnpayIpn(Map<String, String> parameters) {
         if (!isValidSignature(parameters)) return ipn("97", "Invalid signature");
         String txnRef = parameters.get("vnp_TxnRef");
+        Payment paymentSnapshot = paymentRepository.findByVnpTxnRef(txnRef).orElse(null);
+        if (paymentSnapshot == null) return ipn("01", "Order not found");
+        Invoice invoice = invoiceRepository.findLockedById(paymentSnapshot.getInvoiceId())
+                .orElseThrow(() -> invoiceNotFound(paymentSnapshot.getInvoiceId()));
         Payment payment = paymentRepository.findLockedByVnpTxnRef(txnRef).orElse(null);
-        if (payment == null) return ipn("01", "Order not found");
+        if (payment == null || !payment.getInvoiceId().equals(invoice.getId())) return ipn("01", "Order not found");
         String responseCode = parameters.get("vnp_ResponseCode");
         String amountValue = parameters.get("vnp_Amount");
         BigDecimal expected = payment.getAmount().movePointRight(2);
@@ -149,11 +156,16 @@ public class PaymentServiceImpl implements PaymentService {
             return ipn("04", "Invalid amount");
         }
         if (payment.getStatus() != PaymentStatus.PENDING) {
+            if (payment.getStatus() == PaymentStatus.FAILED && "00".equals(responseCode)) {
+                log.error("VNPay reported a late successful transaction {} after payment was marked failed", txnRef);
+            }
             return payment.getStatus() == PaymentStatus.SUCCESS ? ipn("00", "Confirm Success") : ipn("02", "Order already confirmed");
         }
-        Invoice invoice = invoiceRepository.findLockedById(payment.getInvoiceId())
-                .orElseThrow(() -> invoiceNotFound(payment.getInvoiceId()));
         if (invoice.getStatus() == InvoiceStatus.PAID || invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            if ("00".equals(responseCode) && invoice.getStatus() == InvoiceStatus.PAID) {
+                log.error("VNPay reported a late successful transaction {} for already-paid invoice {}",
+                        txnRef, invoice.getInvoiceCode());
+            }
             return ipn("02", "Order already confirmed");
         }
         payment.setVnpResponseCode(responseCode);
@@ -196,7 +208,7 @@ public class PaymentServiceImpl implements PaymentService {
             throw new BusinessException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Mock IPN chỉ bật ở môi trường Development");
         }
         ensureVnpayConfigured();
-        Payment payment = paymentRepository.findLockedByVnpTxnRef(txnRef)
+        paymentRepository.findLockedByVnpTxnRef(txnRef)
                 .orElseThrow(() -> new ResourceNotFoundException("Giao dịch", txnRef));
         Map<String, String> params = new LinkedHashMap<>();
         params.put("vnp_TxnRef", txnRef);
@@ -234,29 +246,6 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ResourceNotFoundException("Giao dịch", id);
         }
         return paymentResponse(payment);
-    }
-
-    /** Confirms a pending COD payment and marks its invoice paid; only the admin controller exposes this action. */
-    @Override
-    @Transactional
-    public PaymentResponse confirmCodPayment(Long id, String transactionRef, String adminEmail) {
-        Payment payment = paymentRepository.findLockedById(id).orElseThrow(() -> new ResourceNotFoundException("Giao dịch", id));
-        if (payment.getPaymentMethod() != PaymentMethod.COD || payment.getStatus() != PaymentStatus.PENDING) {
-            throw new BusinessException(HttpStatus.CONFLICT, "PAYMENT_ALREADY_PROCESSED", "Giao dịch COD đã được xử lý hoặc không hợp lệ");
-        }
-        Invoice invoice = invoiceRepository.findLockedById(payment.getInvoiceId()).orElseThrow(() -> invoiceNotFound(payment.getInvoiceId()));
-        if (invoice.getStatus() != InvoiceStatus.UNPAID && invoice.getStatus() != InvoiceStatus.OVERDUE) {
-            throw new BusinessException(HttpStatus.CONFLICT, "INVOICE_ALREADY_PAID", "Hóa đơn không còn cần thanh toán");
-        }
-        User admin = findUser(adminEmail);
-        payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setConfirmedBy(admin.getId());
-        payment.setTransactionRef(transactionRef == null || transactionRef.isBlank()
-                ? "COD-ADMIN-" + id : transactionRef.trim());
-        payment.setPaidAt(now());
-        invoice.setStatus(InvoiceStatus.PAID);
-        invoiceRepository.save(invoice);
-        return paymentResponse(paymentRepository.save(payment));
     }
 
     /** Lists COD orders for the admin reconciliation table. */
@@ -309,8 +298,7 @@ public class PaymentServiceImpl implements PaymentService {
     /** Confirms collected COD and optionally offsets eligible invoices belonging to the same customer. */
     @Override
     @Transactional
-    public CodOrderResponse confirmCodOrder(Long orderId, List<Long> offsetInvoiceIds,
-            String transactionRef, String adminEmail) {
+    public CodConfirmationResponse confirmCodOrder(Long orderId, List<Long> offsetInvoiceIds, String adminEmail) {
         OutboundOrder order = orderRepository.findLockedById(orderId).orElseThrow(() -> new ResourceNotFoundException("Đơn xuất", orderId));
         if (order.getCodAmount().signum() <= 0 || order.getStatus() != OutboundStatus.DELIVERED
                 || order.getCodStatus() != CodStatus.COLLECTED) throw codStatusConflict();
@@ -321,33 +309,53 @@ public class PaymentServiceImpl implements PaymentService {
         List<Invoice> invoices = new ArrayList<>();
         for (Long invoiceId : invoiceIds) {
             Invoice invoice = invoiceRepository.findLockedById(invoiceId).orElseThrow(() -> invoiceNotFound(invoiceId));
-            if (!invoice.getCustomerId().equals(order.getCustomerId())
-                    || (invoice.getStatus() != InvoiceStatus.UNPAID && invoice.getStatus() != InvoiceStatus.OVERDUE)) {
-                throw new BusinessException(HttpStatus.CONFLICT, "COD_INVALID_STATUS", "Hóa đơn không đủ điều kiện cấn trừ");
+            if (!invoice.getCustomerId().equals(order.getCustomerId())) {
+                throw invoiceNotFound(invoiceId);
+            }
+            if ((invoice.getStatus() != InvoiceStatus.UNPAID && invoice.getStatus() != InvoiceStatus.OVERDUE)
+                    || paymentRepository.existsByInvoiceIdAndStatus(invoiceId, PaymentStatus.SUCCESS)) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT, "INVOICE_ALREADY_PAID", "Hóa đơn đã được thanh toán hoặc không đủ điều kiện");
             }
             offsetTotal = offsetTotal.add(invoice.getTotalAmount());
             invoices.add(invoice);
         }
-        if (offsetTotal.compareTo(order.getCodAmount()) > 0) throw badRequest("Tổng hóa đơn cấn trừ vượt quá tiền COD đã thu");
-        String reference = transactionRef == null || transactionRef.isBlank()
-                ? "COD-" + order.getOrderCode() : transactionRef.trim();
+        if (offsetTotal.compareTo(order.getCodAmount()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.UNPROCESSABLE_CONTENT,
+                    "COD_OFFSET_EXCEEDED",
+                    "Tổng hóa đơn cấn trừ vượt quá tiền COD đã thu");
+        }
+        String reference = "COD-" + order.getOrderCode();
+        List<CodPaidInvoiceResponse> paidInvoices = new ArrayList<>();
         for (Invoice invoice : invoices) {
+            paymentRepository.findLockedByInvoiceIdAndPaymentMethodAndStatus(
+                            invoice.getId(), PaymentMethod.VNPAY, PaymentStatus.PENDING)
+                    .forEach(payment -> payment.setStatus(PaymentStatus.FAILED));
             Payment payment = new Payment();
             payment.setInvoiceId(invoice.getId());
             payment.setPaymentMethod(PaymentMethod.COD);
-            payment.setTransactionRef(reference.length() > 150 ? reference.substring(0, 150) : reference);
+            payment.setTransactionRef(reference);
             payment.setAmount(invoice.getTotalAmount());
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setConfirmedBy(admin.getId());
             payment.setPaidAt(now());
             paymentRepository.save(payment);
             invoice.setStatus(InvoiceStatus.PAID);
+            paidInvoices.add(new CodPaidInvoiceResponse(invoice.getId(), invoice.getInvoiceCode(), invoice.getTotalAmount()));
         }
         invoiceRepository.saveAll(invoices);
         order.setCodStatus(CodStatus.CONFIRMED);
         order.setCodConfirmedBy(admin.getId());
         order.setCodConfirmedAt(now());
-        return codResponse(orderRepository.save(order));
+        orderRepository.save(order);
+        return new CodConfirmationResponse(
+                order.getId(),
+                order.getCodAmount(),
+                offsetTotal,
+                order.getCodAmount().subtract(offsetTotal),
+                order.getCodStatus(),
+                paidInvoices);
     }
 
     private boolean isValidSignature(Map<String, String> parameters) {
@@ -396,9 +404,12 @@ public class PaymentServiceImpl implements PaymentService {
 
     private CodOrderResponse codResponse(OutboundOrder order) {
         String customerName = customerRepository.findById(order.getCustomerId()).map(Customer::getBusinessName).orElse(null);
+        BigDecimal offsetTotal = paymentRepository.sumByTransactionRefAndPaymentMethodAndStatus(
+                "COD-" + order.getOrderCode(), PaymentMethod.COD, PaymentStatus.SUCCESS);
+        if (offsetTotal == null) offsetTotal = BigDecimal.ZERO;
         return new CodOrderResponse(order.getId(), order.getOrderCode(), order.getTrackingCode(), order.getCarrier(),
                 customerName, order.getRecipientName(), order.getDeliveryAddress(), order.getStatus(),
-                order.getCodAmount(), order.getCodStatus());
+                order.getCodAmount(), order.getCodStatus(), offsetTotal, order.getCodAmount().subtract(offsetTotal));
     }
 
     private Customer ownCustomer(String email) {

@@ -15,6 +15,7 @@ import com.warehouse.user.model.User;
 import com.warehouse.user.repository.UserRepository;
 import com.warehouse.user.repository.UserSummaryProjection;
 import com.warehouse.user.repository.UserWithOrganizationProjection;
+import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,11 +33,11 @@ public class UserServiceImpl implements UserService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final int MAX_PAGE_SIZE = 100;
     private final UserRepository userRepository;
-    private final AccountInvitationService accountInvitationService;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserServiceImpl(UserRepository userRepository, AccountInvitationService accountInvitationService) {
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
-        this.accountInvitationService = accountInvitationService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -45,6 +47,7 @@ public class UserServiceImpl implements UserService {
             String role,
             String status,
             String loginMethod,
+            Boolean hasCustomerProfile,
             Pageable pageable) {
         validatePageable(pageable);
         String normalizedRole = EnumParser.parseFilter(role, UserRole.class, "role");
@@ -58,6 +61,7 @@ public class UserServiceImpl implements UserService {
                 normalizedRole,
                 normalizedStatus,
                 normalizedLoginMethod,
+                hasCustomerProfile,
                 stablePage);
         return PageResponse.from(result.map(UserResponse::from));
     }
@@ -104,6 +108,10 @@ public class UserServiceImpl implements UserService {
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new BusinessException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email đã được sử dụng");
         }
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Mật khẩu không được vượt quá 72 byte UTF-8");
+        }
 
         User user = new User();
         user.setFullName(request.fullName().trim());
@@ -113,12 +121,9 @@ public class UserServiceImpl implements UserService {
         user.setRole(UserRole.WAREHOUSE_STAFF);
         user.setStatus(UserStatus.ACTIVE);
         user.setCreatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
-        String rawSetupToken = accountInvitationService.createSetupToken();
-        user.setPasswordSetupTokenHash(accountInvitationService.hashToken(rawSetupToken));
-        user.setPasswordSetupExpiresAt(java.time.LocalDateTime.now(BUSINESS_ZONE).plusHours(24));
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
         userRepository.save(user);
         Long createdUserId = user.getId();
-        accountInvitationService.sendSetupEmail(user, rawSetupToken);
         UserWithOrganizationProjection createdUser =
                 userRepository.findUserWithOrganizationById(createdUserId).orElse(null);
         if (createdUser == null) {

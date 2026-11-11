@@ -114,7 +114,7 @@ Danh sách có phân trang:
 | stockStatus (tính ở BE) | SAFE (khả dụng > 100), LOW (≤ 100), OUT_OF_STOCK (= 0), NEAR_EXPIRY (HSD ≤ 20 ngày) |
 | inbound status | SCHEDULED, RECEIVING, CONFIRMED, CANCELLED |
 | outbound status | PENDING, PREPARING, PACKED, IN_DELIVERY, DELIVERED, RETURNED, CANCELLED |
-| carrier | GHN, GHTK, VIETTEL_POST, SELF_PICKUP (GHTK hiện có trong dữ liệu mẫu/schema; GHN là lựa chọn vận chuyển đã thống nhất) |
+| carrier | GHN, VIETTEL_POST, SELF_PICKUP |
 | codStatus | NONE, PENDING_RECONCILE, COLLECTED, CONFIRMED, RETURNED |
 | invoice status | UNPAID, PAID, OVERDUE, CANCELLED |
 | payment status | PENDING, SUCCESS, FAILED |

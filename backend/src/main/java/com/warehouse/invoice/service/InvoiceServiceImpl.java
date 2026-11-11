@@ -42,7 +42,6 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -199,14 +198,6 @@ public class InvoiceServiceImpl implements InvoiceService {
     public void sendEmail(Long id, String actorEmail) {
         findInvoice(id);
         emailService.sendInvoiceEmail(id, actorEmail);
-    }
-
-    /** Daily job transitions invoices past due date from UNPAID to OVERDUE. */
-    @Scheduled(cron = "0 5 0 * * *", zone = "Asia/Ho_Chi_Minh")
-    @Transactional
-    public void markOverdueInvoices() {
-        invoiceRepository.findByStatusAndDueDateBefore(InvoiceStatus.UNPAID, LocalDate.now(BUSINESS_ZONE))
-                .forEach(invoice -> invoice.setStatus(InvoiceStatus.OVERDUE));
     }
 
     private InvoiceItem newItem(InvoiceLineRequest request) {

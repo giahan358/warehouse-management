@@ -36,7 +36,7 @@ Mã lỗi mới: INVALID_CREDENTIALS, CUSTOMER_PROFILE_REQUIRED, CUSTOMER_PROFIL
 
 ### C. SỬA (đánh dấu `[SỬA V3]` ngay tại dòng)
 
-Xác thực (session cookie), POST /auth/register, POST /auth/login, GET /auth/me, GET /users, POST /users, POST /customers, POST /products, PUT /products/{id}, POST /inbound-receipts, PATCH /inbound-receipts/{id}/cancel, PATCH /inbound-receipts/{id}/confirm, POST /outbound-orders, start-preparing, actual-quantity, mark-returned, cancel đơn xuất, GET /invoices, POST /invoices/{id}/send-email, POST /outbound-orders/{id}/cod/confirm, GET /cod/orders, tác vụ định kỳ OVERDUE, email tự động, enum carrier.
+Xác thực JWT Bearer (thay cho lựa chọn session-cookie trong tài liệu này theo yêu cầu triển khai), POST /auth/register, POST /auth/login, GET /auth/me, GET /users, POST /users, POST /customers, POST /products, PUT /products/{id}, POST /inbound-receipts, PATCH /inbound-receipts/{id}/cancel, PATCH /inbound-receipts/{id}/confirm, POST /outbound-orders, start-preparing, actual-quantity, mark-returned, cancel đơn xuất, GET /invoices, POST /invoices/{id}/send-email, POST /outbound-orders/{id}/cod/confirm, GET /cod/orders, tác vụ định kỳ OVERDUE, email tự động, enum carrier.
 
 ### D. Quy tắc nghiệp vụ chung V3
 
@@ -121,13 +121,13 @@ Trước khi code, cả 4 thành viên thống nhất các quy ước sau.
 | ID | Số nguyên Long |
 | Tiền | Số thập phân, ví dụ 150000.00 |
 | Danh sách | Hỗ trợ phân trang bằng page, size; bộ lọc theo trạng thái khi cần |
-| Xác thực `[SỬA V3]` | Chốt **session cookie** cho cả đăng nhập email/mật khẩu lẫn Google; không dùng JWT |
+| Xác thực `[SỬA V3]` | Dùng JWT Bearer cho API; gửi `Authorization: Bearer <accessToken>`. JWT ký HS256, thời hạn cấu hình qua `JWT_EXPIRATION_SECONDS` |
 | Phân quyền | Backend kiểm tra vai trò, quyền sở hữu dữ liệu và trạng thái nghiệp vụ |
 | Response | Thống nhất một cấu trúc JSON cho thành công và lỗi |
 | API thay đổi trạng thái | Chỉ cho phép chuyển trạng thái hợp lệ; không nhận trạng thái tùy ý từ client |
 | Tính toán phía server `[MỚI]` | Các giá trị dẫn xuất (tồn khả dụng, thể tích, tổng tiền, VAT, mã chứng từ) do Backend tính, FE không gửi lên |
 
-Với dự án có Google OAuth2, nhóm có thể cân nhắc session cookie để đơn giản hóa việc đăng nhập Google. Nếu chọn cách này, cần cấu hình CORS, cookie và CSRF đúng cách.
+Google OAuth2 vẫn dùng redirect/callback của Spring Security; sau callback, backend phát JWT và trả về frontend trong URL fragment để frontend lưu vào session storage. CSRF không cần thiết cho API JWT.
 
 
 Danh sách có phân trang:
@@ -175,13 +175,13 @@ Các request/response dưới đây là hợp đồng đề xuất để FE và 
 | **Method, endpoint** | **Request** | **Response chính** | **Quyền** |
 | --- | --- | --- | --- |
 | POST /auth/register `[SỬA V3]` | {fullName, email, password, phone?} | {userId, fullName, email, role, loginMethod, hasCustomerProfile: false}. Chỉ tạo `users` (CUSTOMER, loginMethod EMAIL, mật khẩu bcrypt); hồ sơ `customers` do Admin tạo sau. Email đã tồn tại (kể cả tài khoản Google) → 409 EMAIL_ALREADY_EXISTS | Công khai; chỉ tạo Customer |
-| POST /auth/login `[SỬA]` `[SỬA V3]` | {email, password} | {data: {id, fullName, email, role, loginMethod}}; session cookie. LOCKED → 403 ACCOUNT_LOCKED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
+| POST /auth/login `[SỬA]` `[SỬA V3]` | {email, password} | {data: {accessToken, tokenType: "Bearer", expiresIn, user: {id, fullName, email, role, loginMethod}}}. LOCKED → 403 ACCOUNT_LOCKED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
 | ~~POST /auth/google~~ `[BỎ V3]` | — | Dùng luồng redirect ở dòng ngay dưới. Chỉ giữ idToken nếu FE đã làm Google Identity Services; khi đó bỏ `OAuth2LoginSuccessHandler`/`CustomOAuth2UserService`, không dùng cả hai | — |
-| GET /oauth2/authorization/google `[MỚI V3]` | Không có (Spring Security cung cấp sẵn) | Chuyển sang Google rồi về callback. Success handler: bắt buộc email_verified = true; chưa có user theo email thì tạo `users` CUSTOMER (loginMethod GOOGLE, googleId); đã có thì gán googleId nếu trống, giữ nguyên role; LOCKED thì chặn và chuyển về FE kèm lỗi ACCOUNT_LOCKED; thành công thì tạo session và chuyển về FE | Công khai |
+| GET /oauth2/authorization/google `[MỚI V3]` | Không có (Spring Security cung cấp sẵn) | Chuyển sang Google rồi về callback. Success handler: bắt buộc email_verified = true; chưa có user theo email thì tạo `users` CUSTOMER (loginMethod GOOGLE, googleId); đã có thì gán googleId nếu trống, giữ nguyên role; LOCKED thì chặn và chuyển về FE kèm lỗi ACCOUNT_LOCKED; thành công thì phát JWT và chuyển token về FE qua URL fragment | Công khai |
 | GET /auth/me `[SỬA]` `[SỬA V3]` | Không có | {id, fullName, email, role, status, loginMethod, customerId?, customerCode?, businessName?, hasCustomerProfile} (customerId null và hasCustomerProfile = false nghĩa là chưa có hồ sơ; FE ẩn chức năng kho và hiện thông báo chờ Admin tạo hồ sơ) | Đã đăng nhập |
-| POST /auth/logout | Không có | Thông báo đăng xuất | Đã đăng nhập |
+| POST /auth/logout | Không có | Thông báo đăng xuất; FE xóa access token. JWT đã phát hành không bị thu hồi và còn dùng được đến khi hết hạn | Đã đăng nhập |
 | PATCH /auth/change-password `[MỚI V3]` | {currentPassword, newPassword} (newPassword ≥ 8 ký tự) | Thông báo đổi mật khẩu thành công. Tài khoản Google chưa có mật khẩu → 400 INVALID_REQUEST | Đã đăng nhập |
-| POST /auth/dev-login `[MỚI V3]` | {email} | Tạo session cho email đó, không cần mật khẩu/Google, để test Swagger | Chỉ bật khi profile `dev`; tắt ở môi trường khác |
+| POST /auth/dev-login `[MỚI V3]` | {email} | Phát JWT cho email đó, không cần mật khẩu/Google, để test Swagger | Chỉ bật khi profile `dev`; tắt ở môi trường khác |
 | GET /users `[SỬA]` | Query page, size, keyword?, role?, status?, loginMethod? (GOOGLE\|EMAIL), hasCustomerProfile? (true/false) `[SỬA V3]` | {id, fullName, email, phone, role, status, lockReason, loginMethod, organization} | Admin |
 | GET /users/summary `[MỚI]` | Không có | {totalUsers, customerCount, staffCount, lockedCount} (4 thẻ thống kê màn Tài khoản) | Admin |
 | GET /users/permission-matrix `[MỚI]` | Không có | Ma trận 6 nhóm chức năng × 3 vai trò (dữ liệu tĩnh trong BE, không có bảng DB) | Admin |
@@ -195,7 +195,7 @@ Các request/response dưới đây là hợp đồng đề xuất để FE và 
 | GET /customers/me `[SỬA]` | Không có | Hồ sơ + tài nguyên kho: {capacityM3, usedM3, reservedInboundM3, remainingM3, usedPercent} | Customer |
 | PUT /customers/me `[SỬA]` | {businessName, phone, address, legalRepresentative?, billingEmail?, bankName?, bankAccountNumber?, bankAccountHolder?}. Không cho đổi taxCode, servicePackage, capacityM3 | Hồ sơ đã cập nhật | Customer |
 
-Google OAuth2 sử dụng redirect/callback của Spring Security, ví dụ /oauth2/authorization/google; không cần tự viết API nhận mật khẩu Google. Sau khi đăng nhập Google, nhóm phải thống nhất cách chuyển về FE và cách duy trì session. Tài khoản LOCKED bị chặn ở cả đăng nhập email và Google.
+Google OAuth2 sử dụng redirect/callback của Spring Security, ví dụ /oauth2/authorization/google; không cần tự viết API nhận mật khẩu Google. Sau khi đăng nhập Google, backend phát JWT và FE dùng token trong header Bearer. Tài khoản LOCKED bị chặn ở cả đăng nhập email và Google.
 
 Ghi chú tính toán `[MỚI]`:
 - `usedM3` = tổng (inventory.quantity × products.volumeM3) của khách.
@@ -371,7 +371,7 @@ Gửi tự động `[MỚI]`: khi đơn xuất chuyển IN_DELIVERY (`mark-in-de
 | --- | --- | --- |
 | 400 | VALIDATION_ERROR | Request sai định dạng hoặc thiếu trường |
 | 400 | INVALID_REQUEST | Dữ liệu đầu vào không hợp lệ |
-| 401 | UNAUTHENTICATED | Chưa đăng nhập hoặc session hết hạn |
+| 401 | UNAUTHENTICATED | Thiếu, sai hoặc hết hạn JWT |
 | 403 | FORBIDDEN | Không có quyền thực hiện |
 | 403 | ACCOUNT_LOCKED `[MỚI]` | Tài khoản bị khóa, không được đăng nhập |
 | 404 | RESOURCE_NOT_FOUND | Không tìm thấy dữ liệu |
@@ -390,4 +390,3 @@ Gửi tự động `[MỚI]`: khi đơn xuất chuyển IN_DELIVERY (`mark-in-de
 Ngoài các mã chung, có thể dùng mã riêng đã liệt kê trong từng nhóm API. FE nên xử lý theo error.code, không phụ thuộc vào nội dung câu message.
 
 ---
-

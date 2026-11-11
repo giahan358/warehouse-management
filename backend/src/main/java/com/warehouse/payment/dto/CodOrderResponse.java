@@ -7,5 +7,6 @@ import java.math.BigDecimal;
 
 public record CodOrderResponse(Long orderId, String orderCode, String trackingCode, Carrier carrier,
         String customerName, String recipientName, String deliveryAddress,
-        OutboundStatus shippingStatus, BigDecimal codAmount, CodStatus codStatus) {
+        OutboundStatus shippingStatus, BigDecimal codAmount, CodStatus codStatus,
+        BigDecimal offsetTotal, BigDecimal remainingAmount) {
 }

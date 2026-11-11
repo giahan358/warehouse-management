@@ -26,5 +26,4 @@ public interface ProductService {
 
     ProductResponse updateStatus(Long id, String email, String role, UpdateProductStatusRequest request);
 
-    void delete(Long id);
 }

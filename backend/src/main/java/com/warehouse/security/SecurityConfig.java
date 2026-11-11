@@ -1,52 +1,46 @@
 package com.warehouse.security;
 
-import com.nimbusds.jose.jwk.source.ImmutableSecret;
-import com.warehouse.user.repository.UserRepository;
-import java.nio.charset.StandardCharsets;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
-
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtDecoder jwtDecoder,
-            UserRepository userRepository,
-            ObjectMapper objectMapper) throws Exception {
-        JwtAuthenticationFilter jwtAuthenticationFilter =
-                new JwtAuthenticationFilter(jwtDecoder, userRepository, objectMapper);
+            ObjectProvider<ClientRegistrationRepository> clientRegistrations,
+            GoogleOAuth2UserService googleOAuth2UserService,
+            GoogleOAuth2SuccessHandler googleOAuth2SuccessHandler,
+            ObjectMapper objectMapper,
+            Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter,
+            @Value("${app.frontend.base-url:http://localhost:5173}") String frontendBaseUrl) throws Exception {
         http
-                .cors(org.springframework.security.config.Customizer.withDefaults())
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
-                                "/api/v1/auth/google",
+                                "/api/v1/auth/dev-login",
                                 "/api/v1/auth/setup-password",
                                 "/api/v1/payments/vnpay/return",
                                 "/api/v1/payments/vnpay/ipn",
+                                "/oauth2/**",
+                                "/login/oauth2/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
@@ -54,41 +48,31 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-                .exceptionHandling(exceptions ->
-                        exceptions
-                                .authenticationEntryPoint(new ApiAuthenticationEntryPoint(objectMapper))
-                                .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper)))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(new ApiAuthenticationEntryPoint(objectMapper))
+                        .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper)))
+                .oauth2ResourceServer(resourceServer -> resourceServer
+                        .authenticationEntryPoint(new ApiAuthenticationEntryPoint(objectMapper))
+                        .accessDeniedHandler(new ApiAccessDeniedHandler(objectMapper))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+
+        if (clientRegistrations.getIfAvailable() != null) {
+            http.oauth2Login(oauth2 -> oauth2
+                    .userInfoEndpoint(userInfo -> userInfo.userService(googleOAuth2UserService))
+                    .successHandler(googleOAuth2SuccessHandler)
+                    .failureHandler((request, response, exception) -> {
+                        String code = exception instanceof org.springframework.security.oauth2.core.OAuth2AuthenticationException oauth
+                                && "account_locked".equals(oauth.getError().getErrorCode())
+                                        ? "ACCOUNT_LOCKED"
+                                        : "OAUTH2_LOGIN_FAILED";
+                        response.sendRedirect(frontendBaseUrl.replaceAll("/+$", "") + "/?error=" + code);
+                    }));
+        }
         return http.build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public SecretKey jwtSecretKey(@Value("${app.jwt.secret:}") String secret) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length < 32) {
-            throw new IllegalStateException("JWT_SECRET must contain at least 32 UTF-8 bytes");
-        }
-        return new SecretKeySpec(keyBytes, "HmacSHA256");
-    }
-
-    @Bean
-    public JwtEncoder jwtEncoder(SecretKey jwtSecretKey) {
-        return new NimbusJwtEncoder(new ImmutableSecret<>(jwtSecretKey));
-    }
-
-    @Bean
-    public JwtDecoder jwtDecoder(
-            SecretKey jwtSecretKey,
-            @Value("${app.jwt.issuer:warehouse-api}") String issuer) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
-                .macAlgorithm(MacAlgorithm.HS256)
-                .build();
-        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
-        return decoder;
     }
 }

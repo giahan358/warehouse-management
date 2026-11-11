@@ -4,7 +4,6 @@ import com.warehouse.common.enums.Carrier;
 import com.warehouse.common.enums.OutboundStatus;
 import com.warehouse.common.response.PageResponse;
 import com.warehouse.outbound.dto.CreateOutboundOrderRequest;
-import com.warehouse.outbound.dto.OutboundItemRequest;
 import com.warehouse.outbound.dto.OutboundOrderDetailResponse;
 import com.warehouse.outbound.dto.OutboundOrderResponse;
 import com.warehouse.outbound.dto.OutboundStatusCountsResponse;
@@ -19,8 +18,6 @@ public interface OutboundOrderService {
     OutboundStatusCountsResponse getStatusCounts(String email, String role, LocalDate from, LocalDate to);
     OutboundOrderDetailResponse create(String email, CreateOutboundOrderRequest request);
     OutboundOrderDetailResponse getById(Long id, String email, String role);
-    OutboundOrderDetailResponse addItem(Long id, String email, OutboundItemRequest request);
-    OutboundOrderDetailResponse approve(Long id, String adminEmail);
     OutboundOrderDetailResponse startPreparing(Long id);
     OutboundOrderDetailResponse updateActualQuantity(Long id, Long itemId, UpdateOutboundActualQuantityRequest request);
     OutboundOrderDetailResponse markPacked(Long id);

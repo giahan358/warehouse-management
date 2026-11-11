@@ -38,6 +38,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                       AND (:role IS NULL OR u.role = :role)
                       AND (:status IS NULL OR u.status = :status)
                       AND (:loginMethod IS NULL OR u.login_method = :loginMethod)
+                      AND (:hasCustomerProfile IS NULL OR (c.id IS NOT NULL) = :hasCustomerProfile)
                     ORDER BY u.id
                     """,
             countQuery = """
@@ -52,6 +53,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                       AND (:role IS NULL OR u.role = :role)
                       AND (:status IS NULL OR u.status = :status)
                       AND (:loginMethod IS NULL OR u.login_method = :loginMethod)
+                      AND (:hasCustomerProfile IS NULL OR (c.id IS NOT NULL) = :hasCustomerProfile)
                     """,
             nativeQuery = true)
     Page<UserWithOrganizationProjection> searchUsers(
@@ -59,6 +61,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
             @Param("role") String role,
             @Param("status") String status,
             @Param("loginMethod") String loginMethod,
+            @Param("hasCustomerProfile") Boolean hasCustomerProfile,
             Pageable pageable);
 
     @Query(

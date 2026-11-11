@@ -7,11 +7,13 @@ import com.warehouse.outbound.dto.ConfirmCodRequest;
 import com.warehouse.outbound.dto.UpdateCodStatusRequest;
 import com.warehouse.payment.dto.CodOrderResponse;
 import com.warehouse.payment.dto.CodSummaryResponse;
-import com.warehouse.payment.dto.ConfirmCodPaymentRequest;
+import com.warehouse.payment.dto.CodConfirmationResponse;
 import com.warehouse.payment.dto.PaymentResponse;
 import com.warehouse.payment.dto.VnpayIpnResponse;
 import com.warehouse.payment.dto.VnpayMockRequest;
 import com.warehouse.payment.service.PaymentService;
+import com.warehouse.security.SessionPrincipal;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -24,7 +26,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -44,6 +45,7 @@ public class PaymentController {
     }
 
     @GetMapping("/payments")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<PageResponse<PaymentResponse>> getPayments(
             @RequestParam(required = false) String method,
@@ -57,21 +59,11 @@ public class PaymentController {
     }
 
     @GetMapping("/payments/{id}")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasAnyRole('ADMIN', 'CUSTOMER')")
-    public ApiResponse<PaymentResponse> getPayment(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<PaymentResponse> getPayment(@PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(paymentService.getPayment(id, jwt.getSubject(), isAdmin(jwt)),
                 "Lấy chi tiết giao dịch thành công");
-    }
-
-    @PostMapping("/payments/{id}/cod/confirm")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ApiResponse<PaymentResponse> confirmCodPayment(
-            @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody(required = false) ConfirmCodPaymentRequest request) {
-        return ApiResponse.success(paymentService.confirmCodPayment(id,
-                request == null ? null : request.transactionRef(), jwt.getSubject()),
-                "Xác nhận thanh toán COD thành công");
     }
 
     @GetMapping("/payments/vnpay/return")
@@ -87,12 +79,14 @@ public class PaymentController {
     }
 
     @PostMapping("/payments/vnpay/ipn/mock")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
     public VnpayIpnResponse mockVnpayIpn(@Valid @RequestBody VnpayMockRequest request) {
         return paymentService.processMockIpn(request.txnRef(), request.responseCode(), request.amount());
     }
 
     @GetMapping("/cod/orders")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<PageResponse<CodOrderResponse>> getCodOrders(
             @RequestParam(required = false) String codStatus,
@@ -105,12 +99,14 @@ public class PaymentController {
     }
 
     @GetMapping("/cod/orders/summary")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<CodSummaryResponse> getCodSummary() {
         return ApiResponse.success(paymentService.getCodSummary(), "Lấy thống kê đối soát COD thành công");
     }
 
     @PatchMapping("/outbound-orders/{id}/cod/status")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<CodOrderResponse> updateCodStatus(
             @PathVariable Long id, @Valid @RequestBody UpdateCodStatusRequest request) {
@@ -119,28 +115,30 @@ public class PaymentController {
     }
 
     @PostMapping("/outbound-orders/{id}/cod/confirm")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('ADMIN')")
-    public ApiResponse<CodOrderResponse> confirmCodOrder(
+    public ApiResponse<CodConfirmationResponse> confirmCodOrder(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody(required = false) ConfirmCodRequest request) {
         return ApiResponse.success(paymentService.confirmCodOrder(id,
                 request == null ? null : request.offsetInvoiceIds(),
-                request == null ? null : request.transactionRef(), jwt.getSubject()),
+                jwt.getSubject()),
                 "Xác nhận đối soát COD thành công");
     }
 
     @GetMapping("/cod/me")
+    @SecurityRequirement(name = "bearerAuth")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ApiResponse<PageResponse<CodOrderResponse>> getMyCodOrders(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) String codStatus,
             @PageableDefault(size = 10) Pageable pageable) {
         return ApiResponse.success(paymentService.getMyCodOrders(jwt.getSubject(), codStatus, pageable),
                 "Lấy danh sách COD của bạn thành công");
     }
 
-    private boolean isAdmin(Jwt jwt) {
-        return jwt.getClaimAsStringList("roles").contains("ADMIN");
+    private boolean isAdmin(SessionPrincipal jwt) {
+        return jwt.roles().contains("ADMIN");
     }
 }

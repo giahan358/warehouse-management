@@ -17,6 +17,7 @@ import com.warehouse.inbound.dto.UpdateInboundActualQuantityRequest;
 import com.warehouse.inbound.dto.UpdateInboundItemRequest;
 import com.warehouse.inbound.dto.UpdateInboundReceiptRequest;
 import com.warehouse.inbound.service.InboundReceiptService;
+import com.warehouse.security.SessionPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
@@ -26,7 +27,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -53,7 +53,7 @@ public class InboundReceiptController {
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     @Operation(summary = "List inbound receipts with filters and pagination")
     public ApiResponse<PageResponse<InboundReceiptResponse>> getReceipts(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
@@ -81,7 +81,7 @@ public class InboundReceiptController {
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     @Operation(summary = "Count inbound receipts by status")
     public ApiResponse<InboundStatusCountsResponse> getStatusCounts(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to) {
         return ApiResponse.success(
@@ -94,7 +94,7 @@ public class InboundReceiptController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Create a scheduled inbound receipt")
     public ApiResponse<InboundReceiptDetailResponse> create(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody CreateInboundReceiptRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.create(jwt.getSubject(), currentRole(jwt), request),
@@ -106,7 +106,7 @@ public class InboundReceiptController {
     @Operation(summary = "Get inbound receipt details and items")
     public ApiResponse<InboundReceiptDetailResponse> getById(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(
                 inboundReceiptService.getById(id, jwt.getSubject(), currentRole(jwt)),
                 "Lấy chi tiết phiếu nhập thành công");
@@ -117,7 +117,7 @@ public class InboundReceiptController {
     @Operation(summary = "Update an owned scheduled inbound receipt")
     public ApiResponse<InboundReceiptDetailResponse> update(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody UpdateInboundReceiptRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.update(id, jwt.getSubject(), request),
@@ -130,7 +130,7 @@ public class InboundReceiptController {
     @Operation(summary = "Add a product to an owned scheduled inbound receipt")
     public ApiResponse<InboundReceiptItemResponse> addItem(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody InboundItemRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.addItem(id, jwt.getSubject(), request),
@@ -143,7 +143,7 @@ public class InboundReceiptController {
     public ApiResponse<InboundReceiptItemResponse> updateItem(
             @PathVariable Long id,
             @PathVariable Long itemId,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody UpdateInboundItemRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.updateItem(id, itemId, jwt.getSubject(), request),
@@ -156,7 +156,7 @@ public class InboundReceiptController {
     public ApiResponse<Void> deleteItem(
             @PathVariable Long id,
             @PathVariable Long itemId,
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal SessionPrincipal jwt) {
         inboundReceiptService.deleteItem(id, itemId, jwt.getSubject());
         return ApiResponse.success(null, "Xóa sản phẩm khỏi phiếu nhập thành công");
     }
@@ -198,7 +198,7 @@ public class InboundReceiptController {
     @Operation(summary = "Start receiving a scheduled inbound receipt at a dock")
     public ApiResponse<InboundReceiptDetailResponse> start(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody(required = false) StartInboundReceiptRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.start(id, request),
@@ -210,7 +210,7 @@ public class InboundReceiptController {
     @Operation(summary = "Confirm a fully counted receipt and add good quantities to inventory")
     public ApiResponse<InboundReceiptDetailResponse> confirm(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(
                 inboundReceiptService.confirm(id, jwt.getSubject()),
                 "Xác nhận nhập kho thành công");
@@ -221,7 +221,7 @@ public class InboundReceiptController {
     @Operation(summary = "Cancel an eligible inbound receipt")
     public ApiResponse<InboundReceiptDetailResponse> cancel(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody(required = false) CancelInboundReceiptRequest request) {
         return ApiResponse.success(
                 inboundReceiptService.cancel(id, jwt.getSubject(), currentRole(jwt), request),
@@ -233,15 +233,13 @@ public class InboundReceiptController {
     @Operation(summary = "Get counted items with quantity variance or damage")
     public ApiResponse<InboundDiscrepancyReportResponse> getDiscrepancyReport(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt) {
+            @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(
                 inboundReceiptService.getDiscrepancyReport(id, jwt.getSubject(), currentRole(jwt)),
                 "Lấy biên bản chênh lệch thành công");
     }
 
-    private String currentRole(Jwt jwt) {
-        return jwt.getClaimAsStringList("roles").stream()
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Authenticated JWT is missing roles"));
+    private String currentRole(SessionPrincipal jwt) {
+        return jwt.role().name();
     }
 }

@@ -153,7 +153,7 @@ CREATE TABLE `outbound_orders` (
   `recipient_name` varchar(150) NOT NULL,
   `recipient_phone` varchar(20) NOT NULL,
   `delivery_address` varchar(500) NOT NULL,
-  `carrier` varchar(30) COMMENT 'GHN, GHTK, VIETTEL_POST, SELF_PICKUP',
+  `carrier` varchar(30) COMMENT 'GHN, VIETTEL_POST, SELF_PICKUP',
   `tracking_code` varchar(50) COMMENT 'Mã vận đơn',
   `note` varchar(200),
   `last_status_note` varchar(255) COMMENT 'Lý do hủy/hoàn đơn gần nhất',
@@ -294,7 +294,7 @@ INSERT INTO `inbound_receipt_items` (`id`, `receipt_id`, `product_id`, `expected
 (4, 3, 5, 200.000, 196.000, 4.000, 'ZB-E01-S01-B04', '4 hộp móp bao bì, lập biên bản');
 
 INSERT INTO `outbound_orders` (`id`, `order_code`, `customer_id`, `created_by`, `recipient_name`, `recipient_phone`, `delivery_address`, `carrier`, `tracking_code`, `note`, `status`, `payment_method`, `cod_amount`, `cod_status`, `cod_confirmed_by`, `cod_confirmed_at`, `created_at`) VALUES
-(1, 'OUT-2026-0001', 1, 3, 'Nguyễn Văn Nam', '0913000001', 'Quận 3, TP Hồ Chí Minh', 'GHTK', 'S22.GHTK.8912401', NULL, 'DELIVERED', 'COD', 4850000.00, 'CONFIRMED', 1, '2026-10-19 13:30:00', '2026-10-16 13:51:42'),
+(1, 'OUT-2026-0001', 1, 3, 'Nguyễn Văn Nam', '0913000001', 'Quận 3, TP Hồ Chí Minh', 'GHN', 'GHN-8912401', NULL, 'DELIVERED', 'COD', 4850000.00, 'CONFIRMED', 1, '2026-10-19 13:30:00', '2026-10-16 13:51:42'),
 (2, 'OUT-2026-0002', 2, 4, 'Trần Thị Mai', '0913000002', 'Thủ Đức, TP Hồ Chí Minh', 'VIETTEL_POST', NULL, NULL, 'PENDING', 'VNPAY', 0.00, 'NONE', NULL, NULL, '2026-10-19 13:51:42');
 
 INSERT INTO `outbound_order_items` (`id`, `order_id`, `product_id`, `quantity_requested`, `quantity_actual`, `unit_price`) VALUES

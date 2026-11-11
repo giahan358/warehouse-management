@@ -3,6 +3,7 @@ package com.warehouse.auth.dto;
 import com.warehouse.common.enums.LoginMethod;
 import com.warehouse.common.enums.UserRole;
 import com.warehouse.common.enums.UserStatus;
+import com.warehouse.customer.model.Customer;
 import com.warehouse.user.model.User;
 
 public record AuthUserResponse(
@@ -12,9 +13,13 @@ public record AuthUserResponse(
         String phone,
         UserRole role,
         UserStatus status,
-        LoginMethod loginMethod) {
+        LoginMethod loginMethod,
+        Long customerId,
+        String customerCode,
+        String businessName,
+        boolean hasCustomerProfile) {
 
-    public static AuthUserResponse from(User user) {
+    public static AuthUserResponse from(User user, Customer customer) {
         return new AuthUserResponse(
                 user.getId(),
                 user.getFullName(),
@@ -22,6 +27,10 @@ public record AuthUserResponse(
                 user.getPhone(),
                 user.getRole(),
                 user.getStatus(),
-                user.getLoginMethod());
+                user.getLoginMethod(),
+                customer == null ? null : customer.getId(),
+                customer == null ? null : customer.getCustomerCode(),
+                customer == null ? null : customer.getBusinessName(),
+                customer != null);
     }
 }

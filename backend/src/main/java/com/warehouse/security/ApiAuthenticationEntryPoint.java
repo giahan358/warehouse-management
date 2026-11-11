@@ -32,7 +32,7 @@ public class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {
                 response.getOutputStream(),
                 new ApiErrorResponse(
                         "UNAUTHENTICATED",
-                        "Chưa đăng nhập hoặc access token không hợp lệ",
+                        "Chưa đăng nhập hoặc phiên làm việc đã hết hạn",
                         null));
     }
 }

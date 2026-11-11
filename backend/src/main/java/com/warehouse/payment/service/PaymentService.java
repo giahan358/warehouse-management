@@ -10,6 +10,7 @@ import com.warehouse.common.response.PageResponse;
 import com.warehouse.invoice.dto.PaymentUrlResponse;
 import com.warehouse.payment.dto.CodOrderResponse;
 import com.warehouse.payment.dto.CodSummaryResponse;
+import com.warehouse.payment.dto.CodConfirmationResponse;
 import com.warehouse.payment.dto.PaymentResponse;
 import com.warehouse.payment.dto.VnpayIpnResponse;
 import java.math.BigDecimal;
@@ -25,12 +26,10 @@ public interface PaymentService {
     PageResponse<PaymentResponse> getPayments(String method, String status, Long invoiceId,
             LocalDate from, LocalDate to, Pageable pageable);
     PaymentResponse getPayment(Long id, String email, boolean admin);
-    PaymentResponse confirmCodPayment(Long id, String transactionRef, String adminEmail);
     PageResponse<CodOrderResponse> getCodOrders(String status, Carrier carrier, Long customerId,
             String keyword, Pageable pageable);
     PageResponse<CodOrderResponse> getMyCodOrders(String email, String status, Pageable pageable);
     CodSummaryResponse getCodSummary();
     CodOrderResponse updateCodStatus(Long orderId, CodStatus status);
-    CodOrderResponse confirmCodOrder(Long orderId, java.util.List<Long> offsetInvoiceIds,
-            String transactionRef, String adminEmail);
+    CodConfirmationResponse confirmCodOrder(Long orderId, java.util.List<Long> offsetInvoiceIds, String adminEmail);
 }

@@ -8,6 +8,7 @@ import com.warehouse.customer.dto.CustomerResponse;
 import com.warehouse.customer.dto.UpdateCustomerRequest;
 import com.warehouse.customer.dto.UpdateMyCustomerRequest;
 import com.warehouse.customer.service.CustomerService;
+import com.warehouse.security.SessionPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
@@ -16,7 +17,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -78,7 +78,7 @@ public class CustomerController {
     @GetMapping("/me")
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "Get the current customer's own profile and warehouse usage")
-    public ApiResponse<CustomerResponse> getMe(@AuthenticationPrincipal Jwt jwt) {
+    public ApiResponse<CustomerResponse> getMe(@AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(customerService.getMe(jwt.getSubject()), "Lấy hồ sơ của bạn thành công");
     }
 
@@ -86,7 +86,7 @@ public class CustomerController {
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "Update editable fields on the current customer's own profile")
     public ApiResponse<CustomerResponse> updateMe(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody UpdateMyCustomerRequest request) {
         return ApiResponse.success(
                 customerService.updateMe(jwt.getSubject(), request),

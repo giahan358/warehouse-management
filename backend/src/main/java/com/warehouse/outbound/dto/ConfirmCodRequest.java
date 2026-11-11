@@ -4,6 +4,5 @@ import jakarta.validation.constraints.Positive;
 import java.util.List;
 
 public record ConfirmCodRequest(
-        List<@Positive Long> offsetInvoiceIds,
-        String transactionRef) {
+        List<@Positive Long> offsetInvoiceIds) {
 }

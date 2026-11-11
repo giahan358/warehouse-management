@@ -5,6 +5,7 @@ import com.warehouse.common.enums.PaymentStatus;
 import com.warehouse.payment.model.Payment;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +28,23 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     java.util.List<Payment> findByInvoiceIdOrderByIdDesc(Long invoiceId);
 
     boolean existsByInvoiceIdAndPaymentMethodAndStatus(Long invoiceId, PaymentMethod method, PaymentStatus status);
+
+    boolean existsByInvoiceIdAndStatus(Long invoiceId, PaymentStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payment p where p.invoiceId = :invoiceId "
+            + "and p.paymentMethod = :method and p.status = :status")
+    java.util.List<Payment> findLockedByInvoiceIdAndPaymentMethodAndStatus(
+            @Param("invoiceId") Long invoiceId,
+            @Param("method") PaymentMethod method,
+            @Param("status") PaymentStatus status);
+
+    @Query("select coalesce(sum(p.amount), 0) from Payment p where p.transactionRef = :transactionRef "
+            + "and p.paymentMethod = :method and p.status = :status")
+    BigDecimal sumByTransactionRefAndPaymentMethodAndStatus(
+            @Param("transactionRef") String transactionRef,
+            @Param("method") PaymentMethod method,
+            @Param("status") PaymentStatus status);
 
     @Query("select p from Payment p join Invoice i on i.id = p.invoiceId "
             + "where (:method is null or p.paymentMethod = :method) "

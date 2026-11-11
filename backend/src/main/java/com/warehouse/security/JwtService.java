@@ -1,8 +1,9 @@
 package com.warehouse.security;
 
-import com.warehouse.user.model.User;
+import com.warehouse.auth.dto.AuthTokenResponse;
+import com.warehouse.auth.dto.AuthUserResponse;
 import java.time.Instant;
-import java.util.List;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -22,31 +23,25 @@ public class JwtService {
             @Value("${app.jwt.expiration-seconds:3600}") long expirationSeconds,
             @Value("${app.jwt.issuer:warehouse-api}") String issuer) {
         if (expirationSeconds <= 0) {
-            throw new IllegalArgumentException("JWT expiration must be greater than zero");
-        }
-        if (issuer == null || issuer.isBlank()) {
-            throw new IllegalArgumentException("JWT issuer must not be blank");
+            throw new IllegalArgumentException("JWT_EXPIRATION_SECONDS must be positive");
         }
         this.jwtEncoder = jwtEncoder;
         this.expirationSeconds = expirationSeconds;
         this.issuer = issuer;
     }
 
-    public String createToken(User user) {
+    public AuthTokenResponse createToken(AuthUserResponse user) {
+        Objects.requireNonNull(user, "user");
         Instant issuedAt = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .issuedAt(issuedAt)
                 .expiresAt(issuedAt.plusSeconds(expirationSeconds))
-                .subject(user.getEmail())
-                .claim("userId", user.getId())
-                .claim("roles", List.of(user.getRole().name()))
+                .subject(user.email())
+                .claim("role", user.role().name())
                 .build();
-        JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
-        return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
-    }
-
-    public long getExpirationSeconds() {
-        return expirationSeconds;
+        String token = jwtEncoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+        return new AuthTokenResponse(token, "Bearer", expirationSeconds, user);
     }
 }

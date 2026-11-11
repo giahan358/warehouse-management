@@ -1,49 +1,95 @@
 # Chạy Backend và kiểm tra API bằng Swagger
 
-Tài liệu này hướng dẫn khởi động Spring Boot backend trong VS Code, mở Swagger UI và xem OpenAPI JSON trên máy local Windows.
+Tài liệu này hướng dẫn chạy Spring Boot backend, kết nối MySQL và sử dụng Swagger UI trên Windows. Backend dùng JWT Bearer cho API nghiệp vụ; Google OAuth2 là luồng đăng nhập tùy chọn.
 
 ## 1. Chuẩn bị
 
-- Cài JDK 21 và kiểm tra trong terminal:
+- JDK 21; kiểm tra trong terminal VS Code:
 
   ```powershell
   java -version
   ```
 
-- Đảm bảo MySQL đang chạy trên cổng `3306`. Nếu dùng XAMPP, bấm **Start** ở dòng **MySQL** trong XAMPP Control Panel. Apache không cần thiết cho backend.
-- Database mặc định là `warehouse_db`. Cần có schema và các bảng theo `docs/warehouse_db.sql`.
+- MySQL đang chạy, thường ở cổng `3306`. Nếu dùng XAMPP, chỉ cần khởi động MySQL; Apache không cần thiết.
+- Mã nguồn nằm trong thư mục dự án `warehouse-management`. Mở thư mục này trong VS Code.
 
-> **Cảnh báo:** `docs/warehouse_db.sql` có lệnh xóa và tạo lại các bảng. Chỉ chạy toàn bộ file này khi khởi tạo database mới hoặc khi chấp nhận mất dữ liệu hiện có. Với database đang sử dụng, áp dụng migration phù hợp trong `docs/migrations/`.
+Database mặc định là `warehouse_db`. Backend đặt `spring.jpa.hibernate.ddl-auto=none`, vì vậy Hibernate **không tạo hoặc cập nhật schema**.
 
-## 2. Mở backend trong VS Code
+### Tạo database lần đầu
 
-1. Mở thư mục dự án trong VS Code.
-2. Chọn **Terminal > New Terminal** (hoặc nhấn `` Ctrl+` ``).
-3. Các lệnh dưới đây dùng **PowerShell** — shell mặc định thường thấy trong VS Code trên Windows.
+Mở `docs/warehouse_db.sql` bằng MySQL Workbench hoặc phpMyAdmin và chạy khi muốn tạo database mới kèm dữ liệu mẫu.
 
-Di chuyển đến thư mục backend:
+> **Cảnh báo mất dữ liệu:** file này có lệnh `DROP TABLE`. Không chạy lại trên database đang sử dụng trừ khi đã sao lưu và chấp nhận xóa toàn bộ dữ liệu.
+
+### Database đã tồn tại
+
+Không chạy lại file khởi tạo. Đối chiếu schema hiện có và áp dụng migration còn thiếu trong `docs/migrations/` theo thứ tự ngày:
+
+1. `2026-11-04-account-setup-token.sql`
+2. `2026-11-10-outbound-invoice-notes.sql`
+
+Các migration không được chạy lặp lại: trước khi áp dụng, kiểm tra xem các cột và constraint mà chúng thêm đã tồn tại chưa. Bản `warehouse_db.sql` hiện tại đã bao gồm các thay đổi này. Sao lưu database trước khi thay đổi schema.
+
+## 2. Mở thư mục Backend
+
+Trong VS Code, mở terminal (**Terminal > New Terminal**) ở thư mục gốc `warehouse-management`, rồi chuyển vào `backend` theo shell đang dùng:
 
 ```powershell
-Set-Location "C:\Users\Admin\Desktop\J2EE\Seminar_va_do_an\He_Thong_Quan_Ly_Ton_Kho\backend"
+Set-Location .\backend
+Get-ChildItem .\mvnw.cmd
 ```
 
-Nếu dự án nằm ở đường dẫn khác, thay đường dẫn trên bằng đường dẫn backend thực tế. Kiểm tra thư mục hiện tại có `mvnw.cmd`:
+```bat
+cd backend
+dir mvnw.cmd
+```
+
+```bash
+cd backend
+ls mvnw*
+```
+
+Các khối lệnh lần lượt dành cho PowerShell, Command Prompt và Git Bash. Nếu terminal không bắt đầu tại thư mục gốc dự án, hãy chuyển đến `<đường-dẫn-dự-án>\warehouse-management\backend` trước. Cần thấy file `mvnw.cmd` (PowerShell/Command Prompt) hoặc `mvnw` (Git Bash).
+
+## 3. Cấu hình và chạy môi trường phát triển
+
+### Nếu báo `powershell is not recognized`
+
+`backend/mvnw.cmd` gọi lệnh `powershell.exe` bên trong wrapper. Lỗi này có thể xảy ra dù PowerShell đã cài nếu thư mục chứa `powershell.exe` chưa nằm trong biến môi trường `PATH`.
+
+Trong terminal PowerShell của VS Code, kiểm tra lệnh và đường dẫn mặc định của Windows PowerShell:
 
 ```powershell
-Get-ChildItem mvnw.cmd
+Get-Command powershell.exe -ErrorAction SilentlyContinue
+Test-Path "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
 ```
 
-## 3. Cấu hình biến môi trường và khởi động
+Nếu `Test-Path` trả về `True` nhưng `Get-Command` không tìm thấy lệnh, thêm thư mục PowerShell vào `PATH` cho terminal hiện tại rồi xác nhận lại:
 
-Backend lấy thông tin kết nối database từ các biến môi trường. Ví dụ dưới đây dùng MySQL local với user `warehouse_app`; thay mật khẩu bằng mật khẩu đã cấu hình cho user đó:
+```powershell
+$env:PATH = "$env:PATH;$env:WINDIR\System32\WindowsPowerShell\v1.0"
+Get-Command powershell.exe
+```
+
+Sau đó chạy lại wrapper trong **chính terminal đó**. Thay đổi trên chỉ tồn tại đến khi đóng terminal. Để sửa lâu dài, mở **Edit the system environment variables > Environment Variables**, chỉnh biến `Path` (User hoặc System) và thêm thư mục chứa `powershell.exe`, thường là:
+
+```text
+C:\Windows\System32\WindowsPowerShell\v1.0
+```
+
+Nếu PowerShell được cài ở vị trí khác, dùng thư mục thực tế chứa `powershell.exe`. Lưu thay đổi, đóng và mở lại VS Code/terminal để `PATH` mới được nạp. Không cần thêm thư mục `pwsh.exe` nếu wrapper đang gọi tên `powershell.exe`; hai tên này không nhất thiết cùng tồn tại.
+
+### Cấu hình bằng PowerShell
+
+Ví dụ sau kết nối MySQL local với tài khoản `root`. Thay `DB_PASSWORD` theo cấu hình MySQL trên máy; nếu tài khoản root không có mật khẩu thì để giá trị rỗng.
 
 ```powershell
 $env:DB_URL = "jdbc:mysql://localhost:3306/warehouse_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8"
-$env:DB_USERNAME = "warehouse_app"
-$env:DB_PASSWORD = "MAT_KHAU_MYSQL_CUA_BAN"
+$env:DB_USERNAME = "root"
+$env:DB_PASSWORD = ""
 ```
 
-Ứng dụng cũng bắt buộc có `JWT_SECRET` dài ít nhất 32 byte UTF-8. Để tạo một khóa ngẫu nhiên cho môi trường phát triển trong phiên PowerShell hiện tại:
+`JWT_SECRET` là bắt buộc. Tạo secret riêng cho môi trường local, tối thiểu 32 byte UTF-8:
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -53,66 +99,81 @@ $env:JWT_SECRET = [Convert]::ToBase64String($bytes)
 $rng.Dispose()
 ```
 
-Khởi động backend:
+Chạy profile `dev` để bật endpoint đăng nhập phục vụ kiểm thử Swagger:
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE = "dev"
 .\mvnw.cmd spring-boot:run
 ```
 
-Giữ terminal này mở trong lúc sử dụng backend. Khi dừng ứng dụng, nhấn `Ctrl+C`. Các biến `$env:...` chỉ có hiệu lực trong cửa sổ terminal hiện tại; nếu mở terminal mới, cần thiết lập lại chúng.
+Giữ terminal chạy backend mở trong khi sử dụng ứng dụng; nhấn `Ctrl+C` để dừng. Các biến `$env:...` chỉ tồn tại trong terminal hiện tại. Tạo lại `JWT_SECRET` sẽ làm các JWT đã phát hành bởi secret cũ không còn hợp lệ.
 
-Nếu muốn giữ JWT ổn định qua nhiều lần khởi động local, hãy tạo một khóa riêng đủ dài và đặt làm biến môi trường `JWT_SECRET` trong cấu hình môi trường của máy hoặc VS Code. Không dùng khóa phát triển cho production, không chia sẻ khóa và không commit bí mật vào Git. Thay đổi khóa sẽ làm các JWT đã phát hành bằng khóa cũ không còn xác thực được.
+Google OAuth2 không bắt buộc để chạy backend. Để bật đăng nhập Google, cấu hình `GOOGLE_OAUTH_ENABLED=true`, `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET`; thông tin OAuth của Google cũng phải cho phép đúng callback URL của backend. Các cấu hình VNPay và email chỉ cần thiết khi kiểm thử các tích hợp tương ứng.
 
-### Nếu chưa có MySQL user hoặc bị `Access denied`
+Không dùng profile `dev` hoặc endpoint dev-login trên môi trường triển khai thật. Không lưu secret, mật khẩu hay thông tin OAuth vào source control.
 
-Trong phpMyAdmin hoặc MySQL Workbench, đăng nhập bằng tài khoản quản trị và tạo/cấp quyền cho user backend. Thay mật khẩu mẫu bằng mật khẩu riêng của bạn:
+### Tài khoản MySQL riêng (tùy chọn)
+
+Thay vì dùng `root`, có thể tạo tài khoản riêng trong MySQL Workbench/phpMyAdmin; thay mật khẩu mẫu bằng mật khẩu do bạn chọn:
 
 ```sql
 CREATE USER IF NOT EXISTS 'warehouse_app'@'localhost'
-IDENTIFIED BY 'MAT_KHAU_MYSQL_CUA_BAN';
+IDENTIFIED BY 'MAT_KHAU_RIENG';
 
 GRANT ALL PRIVILEGES ON warehouse_db.* TO 'warehouse_app'@'localhost';
 ```
 
-Nếu user đã tồn tại nhưng mật khẩu không khớp, đặt lại mật khẩu rồi dùng chính mật khẩu đó cho `DB_PASSWORD`:
+Sau đó đặt `DB_USERNAME=warehouse_app` và `DB_PASSWORD` cùng mật khẩu trong terminal PowerShell.
 
-```sql
-ALTER USER 'warehouse_app'@'localhost'
-IDENTIFIED BY 'MAT_KHAU_MYSQL_CUA_BAN';
-```
+## 4. Xác nhận Backend đã chạy
 
-## 4. Xác nhận backend đã chạy
-
-Đợi log báo ứng dụng đã khởi động, thường có dòng tương tự:
+Chờ log cho biết ứng dụng đã khởi động, thường có các dòng tương tự:
 
 ```text
 Tomcat started on port 8080
 Started WarehouseApplication
 ```
 
-Chỉ thấy `BUILD SUCCESS` chưa chắc ứng dụng đã chạy được. Nếu log có `Application run failed`, hãy xử lý lỗi xuất hiện trước đó; những nguyên nhân thường gặp:
+`BUILD SUCCESS` riêng lẻ chưa xác nhận ứng dụng đang chạy; nếu thấy `Application run failed`, xem lỗi đầu tiên trước đó. Một số nguyên nhân thường gặp:
 
 | Thông báo | Cách kiểm tra |
 | --- | --- |
-| `Access denied for user ...` | Kiểm tra `DB_USERNAME`, `DB_PASSWORD` và quyền user trên `warehouse_db`. |
-| `Communications link failure` | Kiểm tra MySQL của XAMPP đang chạy, đúng cổng `3306` và `DB_URL`. |
-| `Unknown database 'warehouse_db'` | Tạo database/schema cần thiết trước khi chạy backend. |
-| `JWT_SECRET must contain at least 32 UTF-8 bytes` | Đặt `JWT_SECRET` đủ dài trong chính terminal đang chạy backend. |
-| `Port 8080 was already in use` | Dừng tiến trình backend đang chiếm cổng hoặc đổi `SERVER_PORT` sang cổng khác rồi dùng URL tương ứng. |
+| `Access denied for user ...` | Kiểm tra `DB_USERNAME`, `DB_PASSWORD` và quyền trên `warehouse_db`. |
+| `Communications link failure` | Kiểm tra MySQL đang chạy, cổng và `DB_URL`. |
+| `Unknown database 'warehouse_db'` | Tạo database hoặc nhập file khởi tạo nếu đây là database mới. |
+| Thiếu cột/bảng hoặc lỗi SQL khi khởi động | Đối chiếu schema và áp dụng migration còn thiếu; không bật Hibernate tự sửa schema. |
+| `JWT_SECRET must contain at least 32 UTF-8 bytes` | Đặt `JWT_SECRET` dài ít nhất 32 byte trong terminal chạy backend. |
+| `Port 8080 was already in use` | Dừng ứng dụng đang chiếm cổng hoặc đặt `SERVER_PORT` khác rồi dùng URL tương ứng. |
 
-## 5. Mở Swagger UI và OpenAPI JSON
+## 5. Mở Swagger và lấy JWT
 
-Khi backend chạy trên cổng mặc định `8080`, mở trình duyệt và truy cập:
+Khi backend chạy ở cổng mặc định `8080`, mở:
 
 - **Swagger UI:** <http://localhost:8080/swagger-ui/index.html>
 - **OpenAPI JSON:** <http://localhost:8080/v3/api-docs>
 
-Swagger UI và OpenAPI JSON được cấu hình cho phép truy cập không cần đăng nhập. Tuy vậy, phần lớn API nghiệp vụ yêu cầu JWT. Khi gọi endpoint được bảo vệ, cần đăng nhập/lấy access token theo API xác thực rồi nhập token trong Swagger bằng nút **Authorize** (nếu có).
+Swagger UI và OpenAPI JSON có thể mở không cần đăng nhập. Để gọi API nghiệp vụ, cần JWT:
 
-Nếu đã đặt `SERVER_PORT` khác `8080`, thay `8080` trong hai địa chỉ trên bằng cổng đã cấu hình.
+1. Trong Swagger, mở `POST /api/v1/auth/dev-login` và chọn **Try it out**.
+2. Gửi email của tài khoản mẫu trong `docs/warehouse_db.sql`, ví dụ:
 
-## 6. Ghi chú khi dùng XAMPP
+   ```json
+   {
+     "email": "admin@example.com"
+   }
+   ```
 
-- XAMPP phải hiển thị MySQL đang chạy; cổng cấu hình trong backend phải trùng cổng MySQL thực tế.
-- Ứng dụng kết nối vào schema `warehouse_db`, không chỉ cần dịch vụ MySQL đang hoạt động.
-- Kiểm tra phiên bản server bằng phpMyAdmin nếu Hibernate in cảnh báo phiên bản database. Cấu hình dự án khuyến nghị **MySQL 8.0.16 trở lên**; một số bản XAMPP có thể đi kèm MariaDB, không phải MySQL. Cảnh báo phiên bản cần được xem xét riêng, nhưng lỗi xác thực (`Access denied`) hoặc lỗi kết nối sẽ làm ứng dụng khởi động thất bại.
+3. Sao chép giá trị `data.accessToken` trong response thành công.
+4. Chọn **Authorize**; nhập token thuần, không thêm tiền tố `Bearer ` vì Swagger UI tự thêm tiền tố cho HTTP Bearer.
+5. Gọi các endpoint cần xác thực theo vai trò của tài khoản vừa đăng nhập.
+
+`/api/v1/auth/dev-login` chỉ được tạo khi profile `dev` đang bật. Nó bỏ qua mật khẩu, chỉ dùng để kiểm thử local và không được bật trên production. Các tài khoản mẫu có thể không có mật khẩu đăng nhập email; endpoint này không có nghĩa là đăng nhập email thông thường đã được thiết lập.
+
+Đăng nhập email thực tế dùng `POST /api/v1/auth/login`; đăng nhập Google bắt đầu tại `/oauth2/authorization/google` khi Google OAuth2 đã được cấu hình.
+
+## 6. Ghi chú MySQL/XAMPP
+
+- Backend kết nối tới schema `warehouse_db`; MySQL chạy thôi chưa đủ nếu schema chưa được tạo.
+- Cổng MySQL trong XAMPP phải khớp với cổng trong `DB_URL`.
+- Một số phiên bản XAMPP dùng MariaDB thay vì MySQL. Dự án dùng MySQL Connector/J; kiểm tra tương thích nếu server báo lỗi hoặc cảnh báo dialect.
+- Các thay đổi database phải được quản lý bằng SQL trong `docs/warehouse_db.sql` và `docs/migrations/`; không dựa vào Hibernate để tự cập nhật schema.

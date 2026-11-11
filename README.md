@@ -14,6 +14,7 @@ Hệ thống cung cấp dịch vụ tiếp nhận, lưu trữ và xuất hàng c
 - Đăng ký lịch nhập kho, tiếp nhận và xác nhận số lượng hàng thực tế.
 - Tạo yêu cầu xuất kho, xử lý và cập nhật trạng thái xuất hàng.
 - Lập hóa đơn phí dịch vụ, thanh toán VNPay Sandbox và hỗ trợ COD ở mức đơn giản.
+- Phần tiền COD còn lại sau khi cấn trừ hóa đơn được chuyển cho khách ngoài hệ thống; ứng dụng không ghi nhận khoản chuyển này.
 - Dashboard và thống kê cơ bản cho từng vai trò.
 - Kiểm thử API bằng Swagger UI, viết báo cáo và tổ chức source code rõ ràng.
 
@@ -27,7 +28,7 @@ Hệ thống cung cấp dịch vụ tiếp nhận, lưu trữ và xuất hàng c
 | Gọi API | Axios | Kết nối Frontend với Backend |
 | Backend | Java 17+ + Spring Boot 3.x | Xây dựng REST API |
 | Quản lý schema DB | MySQL + SQL | Tạo cấu trúc database từ `docs/warehouse_db.sql`; Hibernate không tự sửa schema |
-| Bảo mật | Spring Security + OAuth2 Client | Đăng nhập Google, xác thực và phân quyền |
+| Bảo mật | Spring Security JWT Bearer + OAuth2 Client | Đăng nhập email/Google, xác thực và phân quyền |
 | Database | MySQL | Lưu dữ liệu nghiệp vụ |
 | Thanh toán | VNPay Sandbox | Kiểm thử thanh toán trực tuyến |
 | Tài liệu API | Springdoc OpenAPI + Swagger UI | Mô tả và thử API trên trình duyệt |

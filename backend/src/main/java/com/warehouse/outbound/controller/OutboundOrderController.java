@@ -5,7 +5,6 @@ import com.warehouse.common.response.ApiResponse;
 import com.warehouse.common.response.PageResponse;
 import com.warehouse.outbound.dto.CreateOutboundOrderRequest;
 import com.warehouse.outbound.dto.CancelOutboundRequest;
-import com.warehouse.outbound.dto.OutboundItemRequest;
 import com.warehouse.outbound.dto.OutboundOrderDetailResponse;
 import com.warehouse.outbound.dto.OutboundOrderResponse;
 import com.warehouse.outbound.dto.OutboundStatusCountsResponse;
@@ -13,6 +12,8 @@ import com.warehouse.outbound.dto.MarkReturnedRequest;
 import com.warehouse.outbound.dto.UpdateOutboundActualQuantityRequest;
 import com.warehouse.outbound.dto.UpdateTrackingRequest;
 import com.warehouse.outbound.service.OutboundOrderService;
+import com.warehouse.security.SessionPrincipal;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import org.springframework.data.domain.Pageable;
@@ -20,11 +21,10 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@SecurityRequirement(name = "bearerAuth")
 public class OutboundOrderController {
     private final OutboundOrderService outboundOrderService;
 
@@ -43,7 +44,7 @@ public class OutboundOrderController {
     @GetMapping("/outbound-orders")
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     public ApiResponse<PageResponse<OutboundOrderResponse>> getOrders(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
@@ -58,7 +59,7 @@ public class OutboundOrderController {
     @GetMapping("/outbound-orders/status-counts")
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     public ApiResponse<OutboundStatusCountsResponse> getStatusCounts(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to) {
         return ApiResponse.success(outboundOrderService.getStatusCounts(jwt.getSubject(), role(jwt), from, to),
@@ -69,7 +70,7 @@ public class OutboundOrderController {
     @PreAuthorize("hasRole('CUSTOMER')")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<OutboundOrderDetailResponse> create(
-            @AuthenticationPrincipal Jwt jwt,
+            @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody CreateOutboundOrderRequest request) {
         return ApiResponse.success(outboundOrderService.create(jwt.getSubject(), request), "Tạo đơn xuất thành công");
     }
@@ -77,26 +78,9 @@ public class OutboundOrderController {
     @GetMapping("/outbound-orders/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     public ApiResponse<OutboundOrderDetailResponse> getById(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+            @PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(outboundOrderService.getById(id, jwt.getSubject(), role(jwt)),
                 "Lấy chi tiết đơn xuất thành công");
-    }
-
-    @PostMapping("/outbound-orders/{id}/items")
-    @PreAuthorize("hasRole('CUSTOMER')")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<OutboundOrderDetailResponse> addItem(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody OutboundItemRequest request) {
-        return ApiResponse.success(outboundOrderService.addItem(id, jwt.getSubject(), request),
-                "Thêm sản phẩm vào đơn xuất thành công");
-    }
-
-    @PatchMapping("/outbound-orders/{id}/approve")
-    @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF')")
-    public ApiResponse<OutboundOrderDetailResponse> approve(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
-        return ApiResponse.success(outboundOrderService.approve(id, jwt.getSubject()), "Đơn xuất đã được tiếp nhận");
     }
 
     @PatchMapping("/outbound-orders/{id}/start-preparing")
@@ -130,7 +114,7 @@ public class OutboundOrderController {
     @PatchMapping("/outbound-orders/{id}/mark-in-delivery")
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF')")
     public ApiResponse<OutboundOrderDetailResponse> markInDelivery(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+            @PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt) {
         return ApiResponse.success(outboundOrderService.markInDelivery(id, jwt.getSubject()),
                 "Đơn đã bàn giao cho đơn vị vận chuyển");
     }
@@ -152,7 +136,7 @@ public class OutboundOrderController {
     @PatchMapping("/outbound-orders/{id}/cancel")
     @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_STAFF', 'CUSTOMER')")
     public ApiResponse<OutboundOrderDetailResponse> cancel(
-            @PathVariable Long id, @AuthenticationPrincipal Jwt jwt,
+            @PathVariable Long id, @AuthenticationPrincipal SessionPrincipal jwt,
             @Valid @RequestBody(required = false) CancelOutboundRequest request) {
         return ApiResponse.success(outboundOrderService.cancel(id, jwt.getSubject(), role(jwt),
                 request == null ? null : request.reason()), "Hủy đơn xuất thành công");
@@ -164,8 +148,7 @@ public class OutboundOrderController {
         return ApiResponse.success(outboundOrderService.getHandoverReport(id), "Lấy biên bản bàn giao thành công");
     }
 
-    private String role(Jwt jwt) {
-        return jwt.getClaimAsStringList("roles").stream().findFirst()
-                .orElseThrow(() -> new IllegalStateException("Authenticated JWT is missing roles"));
+    private String role(SessionPrincipal jwt) {
+        return jwt.role().name();
     }
 }

@@ -70,9 +70,11 @@ backend/src/main/java/com/warehouse/
 │   └── CorsConfig.java
 ├── security/
 │   ├── SecurityConfig.java
+│   ├── SessionPrincipal.java (principal từ JWT)
 │   ├── JwtService.java
-│   ├── JwtAuthenticationFilter.java
-│   ├── GoogleIdTokenVerifier.java
+│   ├── JwtConfiguration.java
+│   ├── GoogleOAuth2UserService.java
+│   ├── GoogleOAuth2SuccessHandler.java
 │   ├── ApiAuthenticationEntryPoint.java
 │   └── ApiAccessDeniedHandler.java
 ├── common/
@@ -245,14 +247,15 @@ Backend lấy thông tin kết nối từ biến môi trường:
 | `VNPAY_RETURN_URL` | URL callback trình duyệt của backend, ví dụ `http://localhost:8080/api/v1/payments/vnpay/return` |
 | `VNPAY_MOCK_ENABLED`, `SPRING_PROFILES_ACTIVE` | Chỉ bật mock IPN khi profile là `dev`/`development` và mock flag là `true` |
 | `ZONE_A_CAPACITY_M3`, `ZONE_B_CAPACITY_M3`, `ZONE_C_CAPACITY_M3` | Sức chứa cấu hình cho biểu đồ zone; mặc định `0` nghĩa là chưa cấu hình |
-| `JWT_SECRET` | Khóa ký JWT bí mật, tối thiểu 32 byte UTF-8; dùng cùng giá trị ở mọi instance Backend của một môi trường |
-| `JWT_EXPIRATION_SECONDS` | Thời hạn access token tính bằng giây; mặc định `3600` |
-| `JWT_ISSUER` | Issuer của JWT; mặc định `warehouse-api` và phải thống nhất giữa các instance |
 | `SERVER_ADDRESS` | Địa chỉ backend bind; mặc định `0.0.0.0` để frontend trên máy khác có thể truy cập qua mạng |
 | `SERVER_PORT` | Cổng backend; mặc định `8080` |
-| `GOOGLE_CLIENT_ID` | OAuth Client ID dùng để kiểm tra audience của Google ID token |
+| `JWT_SECRET` | Khóa HS256 tối thiểu 32 byte UTF-8; bắt buộc ở mọi môi trường |
+| `JWT_EXPIRATION_SECONDS` | Thời hạn access token tính bằng giây; mặc định `3600` |
+| `JWT_ISSUER` | Issuer trong JWT; mặc định `warehouse-api` |
+| `GOOGLE_OAUTH_ENABLED` | Bật đăng nhập Google OAuth redirect; mặc định `false` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth Client credentials khi bật Google login; không commit secret |
 | `CORS_ALLOWED_ORIGINS` | Danh sách origin frontend được phép, phân cách bằng dấu phẩy; ví dụ `http://localhost:5173` hoặc domain frontend khi triển khai |
-| `FRONTEND_BASE_URL` | URL frontend để tạo link thiết lập mật khẩu qua email; mặc định `http://localhost:5173` |
+| `FRONTEND_BASE_URL` | URL frontend cho redirect OAuth; mặc định `http://localhost:5173` |
 | `SHOW_SQL`, `FORMAT_SQL` | Bật/tắt log câu SQL và format SQL; mặc định `false` |
 | `HIBERNATE_SQL_LOG_LEVEL` | Mức log câu SQL; mặc định `WARN`, tránh bật parameter/bind trace trên dữ liệu thật |
 
@@ -269,3 +272,7 @@ Sau đó chạy backend:
 cd backend
 .\mvnw.cmd spring-boot:run
 ```
+
+### Xác thực JWT
+
+`POST /api/v1/auth/login` trả access token; gửi token ở mọi API được bảo vệ dưới dạng `Authorization: Bearer <accessToken>`. Google login tiếp tục dùng redirect `/oauth2/authorization/google`; callback phát JWT về frontend. Đặt `JWT_SECRET` thành giá trị ngẫu nhiên riêng, tối thiểu 32 byte UTF-8.
