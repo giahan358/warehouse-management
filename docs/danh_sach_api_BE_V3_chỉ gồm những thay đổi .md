@@ -13,7 +13,7 @@ File này gom lại **những gì V3 thêm mới hoặc sửa** so với V2, đ�
 
 # Phần 1. Quy tắc và danh sách thay đổi
 
-**Nguyên tắc V3: không sửa database.** Mọi thay đổi chỉ nằm ở API, quy tắc Service và tài liệu. File `warehouse_db.sql` giữ nguyên.
+**Nguyên tắc V3: không sửa schema database.** Thay đổi API/nghiệp vụ không thêm cột hay bảng; dữ liệu mẫu carrier được cập nhật theo danh sách hiện hành.
 
 
 ### A. BỎ (5 endpoint)
@@ -39,7 +39,7 @@ Mã lỗi mới: INVALID_CREDENTIALS, CUSTOMER_PROFILE_REQUIRED, CUSTOMER_PROFIL
 
 ### C. SỬA (đánh dấu `[SỬA V3]` ngay tại dòng)
 
-Xác thực (session cookie), POST /auth/register, POST /auth/login, GET /auth/me, GET /users, POST /users, POST /customers, POST /products, PUT /products/{id}, POST /inbound-receipts, PATCH /inbound-receipts/{id}/cancel, PATCH /inbound-receipts/{id}/confirm, POST /outbound-orders, start-preparing, actual-quantity, mark-returned, cancel đơn xuất, GET /invoices, POST /invoices/{id}/send-email, POST /outbound-orders/{id}/cod/confirm, GET /cod/orders, tác vụ định kỳ OVERDUE, email tự động, enum carrier.
+Xác thực JWT Bearer (thay cho lựa chọn session-cookie trong tài liệu này theo yêu cầu triển khai), POST /auth/register, POST /auth/login, GET /auth/me, GET /users, POST /users, POST /customers, POST /products, PUT /products/{id}, POST /inbound-receipts, PATCH /inbound-receipts/{id}/cancel, PATCH /inbound-receipts/{id}/confirm, POST /outbound-orders, start-preparing, actual-quantity, mark-returned, cancel đơn xuất, GET /invoices, POST /invoices/{id}/send-email, POST /outbound-orders/{id}/cod/confirm, GET /cod/orders, tác vụ định kỳ OVERDUE, email tự động, enum carrier.
 
 ### D. Quy tắc nghiệp vụ chung V3
 
@@ -120,11 +120,11 @@ Số mục giữ nguyên như file V3 đầy đủ.
 | **Method, endpoint** | **Request** | **Response chính** | **Quyền** |
 | --- | --- | --- | --- |
 | POST /auth/register **[SỬA V3]** | {fullName, email, password, phone?} | {userId, fullName, email, role, loginMethod, hasCustomerProfile: false}. Chỉ tạo `users` (CUSTOMER, loginMethod EMAIL, mật khẩu bcrypt); hồ sơ `customers` do Admin tạo sau. Email đã tồn tại (kể cả tài khoản Google) → 409 EMAIL_ALREADY_EXISTS | Công khai; chỉ tạo Customer |
-| POST /auth/login **[SỬA V3]** | {email, password} | {data: {id, fullName, email, role, loginMethod}}; session cookie. LOCKED → 403 ACCOUNT_LOCKED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
-| GET /oauth2/authorization/google **[MỚI V3]** | Không có (Spring Security cung cấp sẵn) | Chuyển sang Google rồi về callback. Success handler: bắt buộc email_verified = true; chưa có user theo email thì tạo `users` CUSTOMER (loginMethod GOOGLE, googleId); đã có thì gán googleId nếu trống, giữ nguyên role; LOCKED thì chặn và chuyển về FE kèm lỗi ACCOUNT_LOCKED; thành công thì tạo session và chuyển về FE | Công khai |
+| POST /auth/login **[SỬA V3]** | {email, password} | {data: {accessToken, tokenType: "Bearer", expiresIn, user: {id, fullName, email, role, loginMethod}}}. LOCKED → 403 ACCOUNT_LOCKED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
+| GET /oauth2/authorization/google **[MỚI V3]** | Không có (Spring Security cung cấp sẵn) | Chuyển sang Google rồi về callback. Success handler: bắt buộc email_verified = true; chưa có user theo email thì tạo `users` CUSTOMER (loginMethod GOOGLE, googleId); đã có thì gán googleId nếu trống, giữ nguyên role; LOCKED thì chặn và chuyển về FE kèm lỗi ACCOUNT_LOCKED; thành công thì phát JWT và chuyển token về FE qua URL fragment | Công khai |
 | GET /auth/me **[SỬA V3]** | Không có | {id, fullName, email, role, status, loginMethod, customerId?, customerCode?, businessName?, hasCustomerProfile} (customerId null và hasCustomerProfile = false nghĩa là chưa có hồ sơ; FE ẩn chức năng kho và hiện thông báo chờ Admin tạo hồ sơ) | Đã đăng nhập |
 | PATCH /auth/change-password **[MỚI V3]** | {currentPassword, newPassword} (newPassword ≥ 8 ký tự) | Thông báo đổi mật khẩu thành công. Tài khoản Google chưa có mật khẩu → 400 INVALID_REQUEST | Đã đăng nhập |
-| POST /auth/dev-login **[MỚI V3]** | {email} | Tạo session cho email đó, không cần mật khẩu/Google, để test Swagger | Chỉ bật khi profile `dev`; tắt ở môi trường khác |
+| POST /auth/dev-login **[MỚI V3]** | {email} | Phát JWT cho email đó, không cần mật khẩu/Google, để test Swagger | Chỉ bật khi profile `dev`; tắt ở môi trường khác |
 | GET /users | Query page, size, keyword?, role?, status?, loginMethod? (GOOGLE\|EMAIL), hasCustomerProfile? (true/false) **[SỬA V3]** | {id, fullName, email, phone, role, status, lockReason, loginMethod, organization} | Admin |
 | POST /users **[SỬA V3]** | {fullName, email, phone?, role, password} | Tài khoản mới (loginMethod EMAIL). Admin đặt mật khẩu ban đầu (≥ 8 ký tự), BE lưu bcrypt; Staff đổi qua /auth/change-password và cũng đăng nhập được bằng Google nếu email trùng | Admin; chỉ tạo Staff theo MVP |
 | POST /customers **[SỬA V3]** | {userId, businessName, phone, address, taxCode?, legalRepresentative?, billingEmail?, servicePackage?, capacityM3?} | Hồ sơ khách hàng (customerCode tự sinh dạng CUST-VNxx). userId phải là tài khoản role CUSTOMER chưa có hồ sơ (đã có → 409 CUSTOMER_PROFILE_EXISTS); tìm bằng GET /users?role=CUSTOMER&hasCustomerProfile=false | Admin |

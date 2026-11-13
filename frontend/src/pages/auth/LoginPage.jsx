@@ -8,17 +8,19 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import authApi, { MAX_FAILED_ATTEMPTS } from '../../api/authApi'
 import { USE_MOCK } from '../../api/axiosClient'
 import { accountsMock } from '../../mocks/accounts'
+import axiosClient from '../../api/axiosClient'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLES, ROLE_LABELS } from '../../constants/roles'
 
 export default function LoginPage() {
-  const { isAuthenticated, login } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, login } = useAuth()
   const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   // Đã đăng nhập thì vào thẳng trang chủ theo role
+  if (authLoading) return <div style={{ display: 'grid', minHeight: '50vh', placeItems: 'center' }}>Đang kiểm tra phiên đăng nhập...</div>
   if (isAuthenticated) return <Navigate to="/" replace />
 
   const onFinish = async ({ email, password }) => {
@@ -35,7 +37,7 @@ export default function LoginPage() {
       message.success(`Xin chào ${user.name}`)
       navigate('/', { replace: true })
     } catch (e) {
-      setError(e?.message ?? e?.response?.data?.message ?? 'Không thể đăng nhập, vui lòng thử lại.')
+      setError(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? e?.message ?? 'Không thể đăng nhập, vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -55,7 +57,13 @@ export default function LoginPage() {
         </div>
 
         <Button block size="large" icon={<GoogleOutlined />} style={{ background: '#eff4ff', border: 'none' }}
-          onClick={() => message.info('Đăng nhập Google Doanh nghiệp sẽ được bật ở bước sau')}>
+        onClick={() => {
+          if (USE_MOCK) {
+            message.info('Đăng nhập Google chỉ khả dụng khi kết nối backend.')
+            return
+          }
+          window.location.assign(new URL('/oauth2/authorization/google', axiosClient.defaults.baseURL).href)
+        }}>
           Đăng nhập nhanh qua Google
         </Button>
         <Divider plain style={{ fontSize: 12, color: '#414755' }}>Hoặc đăng nhập bằng Email nội bộ & Mật khẩu</Divider>

@@ -361,7 +361,7 @@ Với Ant Design, `getByRole` đôi khi không khớp. Khi đó dùng `getByLabe
 | 2 | Khách chưa có hồ sơ (`hasCustomerProfile = false`) thấy màn chờ, không thấy menu kho |
 | 2 | Form đơn xuất: COD bắt buộc `codAmount > 0`, VNPAY khóa ô tiền, thiếu trường không gửi request |
 | 3 | Màn đối soát COD: tổng hóa đơn chọn lớn hơn `codAmount` thì nút xác nhận bị vô hiệu |
-| 3 | Axios gửi kèm cookie (`withCredentials`); nhận 401 thì về trang đăng nhập |
+| 3 | Axios gửi JWT trong header `Authorization: Bearer ...`; nhận 401 thì về trang đăng nhập |
 
 ---
 
