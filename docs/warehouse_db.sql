@@ -41,11 +41,13 @@ CREATE TABLE `users` (
   `email` varchar(255) UNIQUE NOT NULL,
   `phone` varchar(20),
   `password_hash` varchar(255),
-  `google_id` varchar(255),
+  `google_id` varchar(255) UNIQUE,
   `login_method` varchar(20) NOT NULL DEFAULT 'EMAIL' COMMENT 'EMAIL hoặc GOOGLE',
   `role` varchar(30) NOT NULL COMMENT 'ADMIN, WAREHOUSE_STAFF, CUSTOMER',
   `status` varchar(20) NOT NULL COMMENT 'ACTIVE, LOCKED',
   `lock_reason` varchar(255) COMMENT 'Lý do khóa (nợ cước quá hạn...)',
+  `password_setup_token_hash` varchar(64),
+  `password_setup_expires_at` datetime,
   `created_at` datetime NOT NULL
 );
 
@@ -146,12 +148,15 @@ CREATE TABLE `outbound_orders` (
   `order_code` varchar(50) UNIQUE NOT NULL,
   `customer_id` bigint NOT NULL,
   `created_by` bigint NOT NULL COMMENT 'User tạo đơn (khách hàng)',
+  `approved_by` bigint COMMENT 'Admin/Staff tiếp nhận đơn',
+  `approved_at` datetime,
   `recipient_name` varchar(150) NOT NULL,
   `recipient_phone` varchar(20) NOT NULL,
   `delivery_address` varchar(500) NOT NULL,
-  `carrier` varchar(30) COMMENT 'GHN, GHTK, VIETTEL_POST, SELF_PICKUP',
+  `carrier` varchar(30) COMMENT 'GHN, VIETTEL_POST, SELF_PICKUP',
   `tracking_code` varchar(50) COMMENT 'Mã vận đơn',
   `note` varchar(200),
+  `last_status_note` varchar(255) COMMENT 'Lý do hủy/hoàn đơn gần nhất',
   `status` varchar(30) NOT NULL COMMENT 'PENDING, PREPARING, PACKED, IN_DELIVERY, DELIVERED, RETURNED, CANCELLED',
   `payment_method` varchar(20) NOT NULL COMMENT 'COD, VNPAY',
   `cod_amount` decimal(15,2) NOT NULL DEFAULT 0 COMMENT 'Tiền thu hộ',
@@ -170,6 +175,7 @@ CREATE TABLE `outbound_order_items` (
   `product_id` bigint NOT NULL,
   `quantity_requested` decimal(12,3) NOT NULL,
   `quantity_actual` decimal(12,3),
+  `pick_note` varchar(255) COMMENT 'Ghi chú khi soạn thiếu hàng',
   `unit_price` decimal(15,2) NOT NULL COMMENT 'Phí dịch vụ kho trên mỗi đơn vị'
 );
 
@@ -190,6 +196,7 @@ CREATE TABLE `invoices` (
   `vat_amount` decimal(15,2) NOT NULL DEFAULT 0,
   `total_amount` decimal(15,2) NOT NULL,
   `status` varchar(20) NOT NULL COMMENT 'UNPAID, PAID, OVERDUE, CANCELLED',
+  `cancel_reason` varchar(255),
   `created_at` datetime NOT NULL,
   CONSTRAINT `chk_invoice_total` CHECK (`total_amount` = `amount` + `vat_amount`)
 );
@@ -287,7 +294,7 @@ INSERT INTO `inbound_receipt_items` (`id`, `receipt_id`, `product_id`, `expected
 (4, 3, 5, 200.000, 196.000, 4.000, 'ZB-E01-S01-B04', '4 hộp móp bao bì, lập biên bản');
 
 INSERT INTO `outbound_orders` (`id`, `order_code`, `customer_id`, `created_by`, `recipient_name`, `recipient_phone`, `delivery_address`, `carrier`, `tracking_code`, `note`, `status`, `payment_method`, `cod_amount`, `cod_status`, `cod_confirmed_by`, `cod_confirmed_at`, `created_at`) VALUES
-(1, 'OUT-2026-0001', 1, 3, 'Nguyễn Văn Nam', '0913000001', 'Quận 3, TP Hồ Chí Minh', 'GHTK', 'S22.GHTK.8912401', NULL, 'DELIVERED', 'COD', 4850000.00, 'CONFIRMED', 1, '2026-10-19 13:30:00', '2026-10-16 13:51:42'),
+(1, 'OUT-2026-0001', 1, 3, 'Nguyễn Văn Nam', '0913000001', 'Quận 3, TP Hồ Chí Minh', 'GHN', 'GHN-8912401', NULL, 'DELIVERED', 'COD', 4850000.00, 'CONFIRMED', 1, '2026-10-19 13:30:00', '2026-10-16 13:51:42'),
 (2, 'OUT-2026-0002', 2, 4, 'Trần Thị Mai', '0913000002', 'Thủ Đức, TP Hồ Chí Minh', 'VIETTEL_POST', NULL, NULL, 'PENDING', 'VNPAY', 0.00, 'NONE', NULL, NULL, '2026-10-19 13:51:42');
 
 INSERT INTO `outbound_order_items` (`id`, `order_id`, `product_id`, `quantity_requested`, `quantity_actual`, `unit_price`) VALUES
@@ -341,6 +348,7 @@ ALTER TABLE `inbound_receipt_items` ADD FOREIGN KEY (`receipt_id`) REFERENCES `i
 ALTER TABLE `inbound_receipt_items` ADD FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`);
 ALTER TABLE `outbound_orders` ADD FOREIGN KEY (`cod_confirmed_by`) REFERENCES `users` (`id`);
 ALTER TABLE `outbound_order_items` ADD FOREIGN KEY (`order_id`) REFERENCES `outbound_orders` (`id`);
 ALTER TABLE `outbound_order_items` ADD FOREIGN KEY (`product_id`) REFERENCES `products` (`id`);

@@ -1,24 +1,21 @@
-import axios from 'axios'
-
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+import axios from "axios";
+import { getAccessToken } from "./authToken";
 
 const axiosClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
-  withCredentials: true, // gửi cookie session sau khi đăng nhập Google OAuth2
-  headers: { 'Content-Type': 'application/json' },
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/v1",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+axiosClient.interceptors.request.use((config) => {
+  const token = getAccessToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
 })
 
-axiosClient.interceptors.response.use(
-  (res) => res.data,
-  (err) => {
-    // Đăng nhập sai cũng trả 401: để trang Login tự hiển thị lỗi, không chuyển hướng
-    const isLoginCall = err.config?.url?.includes('/auth/login')
-    if (err.response?.status === 401 && !isLoginCall) window.location.href = '/login'
-    return Promise.reject(err)
-  },
-)
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+export const mockResolve = (value, delay = 150) =>
+  new Promise((resolve) => setTimeout(() => resolve(value), delay));
 
-// Trả mock sau 300ms để thấy trạng thái loading
-export const mockResolve = (data) => new Promise((r) => setTimeout(() => r(data), 300))
-
-export default axiosClient
+export default axiosClient;

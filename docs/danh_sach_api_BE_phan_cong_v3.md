@@ -387,4 +387,3 @@ Gửi tự động: khi đơn xuất chuyển IN_DELIVERY (`mark-in-delivery`), 
 Ngoài các mã chung, có thể dùng mã riêng đã liệt kê trong từng nhóm API. FE nên xử lý theo error.code, không phụ thuộc vào nội dung câu message.
 
 ---
-
