@@ -6,8 +6,8 @@ import java.util.List;
 public record InboundDiscrepancyReportResponse(
         Long receiptId,
         String receiptCode,
-        BigDecimal shortageTotal,
-        BigDecimal damagedTotal,
+        BigDecimal totalShortage,
+        BigDecimal totalDamaged,
         List<DiscrepancyItem> items) {
     public record DiscrepancyItem(
             Long itemId,

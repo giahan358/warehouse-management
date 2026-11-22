@@ -37,7 +37,7 @@ public class JwtService {
                 .issuer(issuer)
                 .issuedAt(issuedAt)
                 .expiresAt(issuedAt.plusSeconds(expirationSeconds))
-                .subject(user.email())
+                .subject(Objects.requireNonNull(user.id(), "user.id").toString())
                 .claim("role", user.role().name())
                 .build();
         String token = jwtEncoder.encode(JwtEncoderParameters.from(

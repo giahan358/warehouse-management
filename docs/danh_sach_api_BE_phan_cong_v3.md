@@ -9,7 +9,7 @@ Lưu ý: nên tạo tài khoản email riêng để phục vụ cho đồ án, k
 
 ## Nguyên tắc và quy tắc chung
 
-**Nguyên tắc: không sửa database.** Mọi thay đổi chỉ nằm ở API, quy tắc Service và tài liệu. File `warehouse_db.sql` giữ nguyên.
+**Nguyên tắc: không sửa database trực tiếp.** Thay đổi schema phải được triển khai bằng migration có thể rà soát; không tự ý chỉnh database đang chạy. `warehouse_db.sql` là schema khởi tạo và phải được giữ đồng bộ với migration.
 
 Chú thích nhãn: `[BỔ SUNG V3]` là công thức tính toán được ghi rõ thêm (không đổi API, không đổi DB).
 
@@ -17,6 +17,7 @@ Chú thích nhãn: `[BỔ SUNG V3]` là công thức tính toán được ghi r�
 
 **D1. Đăng nhập: cả hai cách cùng tồn tại**
 - Email/mật khẩu: `POST /auth/register` (khách) và `POST /auth/login`. Admin tạo Staff kèm mật khẩu ban đầu.
+- Đăng ký email/mật khẩu gửi link xác minh đến email đã khai báo; tài khoản chưa xác minh không được đăng nhập. Google OAuth chỉ đánh dấu email đã xác minh khi Google trả `email_verified = true`. Các tài khoản đã tồn tại trước khi bật luồng xác minh được giữ trạng thái đã xác minh.
 - Google: nút Đăng nhập Google đi qua `/oauth2/authorization/google`. Bắt buộc `email_verified = true`, rồi khớp theo email: chưa có user thì tạo `users` (CUSTOMER, loginMethod GOOGLE, googleId); đã có user (kể cả tài khoản email, Staff, Admin) thì gán `googleId` nếu còn trống và giữ nguyên role.
 - `password_hash = NULL` nghĩa là tài khoản chỉ có Google; đăng nhập email trả 401 INVALID_CREDENTIALS, không tiết lộ lý do.
 - Cả hai cách đăng nhập cùng phát **JWT** (không dùng session cookie); sau khi có token, BE xử lý hai loại tài khoản giống hệt nhau.
@@ -156,10 +157,13 @@ Các request/response dưới đây là hợp đồng đề xuất để FE và 
 
 | **Method, endpoint** | **Request** | **Response chính** | **Quyền** |
 | --- | --- | --- | --- |
-| POST /auth/register | {fullName, email, password, phone?} | {userId, fullName, email, role, loginMethod, hasCustomerProfile: false}. Chỉ tạo `users` (CUSTOMER, loginMethod EMAIL, mật khẩu bcrypt); hồ sơ `customers` do Admin tạo sau. Email đã tồn tại (kể cả tài khoản Google) → 409 EMAIL_ALREADY_EXISTS | Công khai; chỉ tạo Customer |
-| POST /auth/login `[SỬA]` `[SỬA V3]` | {email, password} | {data: {id, fullName, email, role, loginMethod}}; session cookie. LOCKED → 403 ACCOUNT_LOCKED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
+| POST /auth/register | {fullName, email, password, phone?} | {id, fullName, email, role, loginMethod, emailVerified: false, hasCustomerProfile: false}; gửi link xác minh qua SMTP. Chỉ tạo `users` (CUSTOMER, mật khẩu bcrypt); hồ sơ `customers` do Admin tạo sau. Email đã tồn tại → 409 EMAIL_ALREADY_EXISTS; lỗi SMTP → 503 EMAIL_VERIFICATION_UNAVAILABLE | Công khai; chỉ tạo Customer |
+| GET /auth/verify-email?token=... | Token trong link email | Trang xác nhận; người dùng chủ động nhấn nút để xác minh (GET không tự tiêu thụ token) | Công khai |
+| POST /auth/verify-email | {token} (JSON hoặc form từ trang xác nhận) | Đánh dấu email đã xác minh; token dùng một lần, hết hạn sau 24 giờ | Công khai |
+| POST /auth/resend-verification | {email} | 202 với thông báo chung; gửi lại link nếu tài khoản email chưa xác minh, giới hạn một lần mỗi 60 giây | Công khai |
+| POST /auth/login `[SỬA]` `[SỬA V3]` | {email, password} | {accessToken, tokenType, expiresIn, user: {id, fullName, email, role, loginMethod, emailVerified}}. LOCKED → 403 ACCOUNT_LOCKED. Chưa xác minh → 403 EMAIL_NOT_VERIFIED. Sai email/mật khẩu, hoặc tài khoản chỉ có Google (password_hash NULL) → 401 INVALID_CREDENTIALS, không tiết lộ lý do | Công khai |
 | GET /oauth2/authorization/google | Không có (Spring Security cung cấp sẵn) | Chuyển sang Google rồi về callback. Success handler: bắt buộc email_verified = true; chưa có user theo email thì tạo `users` CUSTOMER (loginMethod GOOGLE, googleId); đã có thì gán googleId nếu trống, giữ nguyên role; LOCKED thì chặn và chuyển về FE kèm lỗi ACCOUNT_LOCKED; thành công thì phát JWT và chuyển token về FE qua URL fragment | Công khai |
-| GET /auth/me | Không có | {id, fullName, email, role, status, loginMethod, customerId?, customerCode?, businessName?, hasCustomerProfile} (customerId null và hasCustomerProfile = false nghĩa là chưa có hồ sơ; FE ẩn chức năng kho và hiện thông báo chờ Admin tạo hồ sơ) | Đã đăng nhập |
+| GET /auth/me | Không có | {id, fullName, email, role, status, loginMethod, emailVerified, customerId?, customerCode?, businessName?, hasCustomerProfile} (customerId null và hasCustomerProfile = false nghĩa là chưa có hồ sơ; FE ẩn chức năng kho và hiện thông báo chờ Admin tạo hồ sơ) | Đã đăng nhập |
 | POST /auth/logout | Không có | Thông báo đăng xuất; FE xóa access token. JWT đã phát hành không bị thu hồi và còn dùng được đến khi hết hạn | Đã đăng nhập |
 | PATCH /auth/change-password | {currentPassword, newPassword} (newPassword ≥ 8 ký tự) | Thông báo đổi mật khẩu thành công. Tài khoản Google chưa có mật khẩu → 400 INVALID_REQUEST | Đã đăng nhập |
 | POST /auth/dev-login `[MỚI V3]` | {email} | Phát JWT cho email đó, không cần mật khẩu/Google, để test Swagger | Chỉ bật khi profile `dev`; tắt ở môi trường khác |
@@ -185,7 +189,7 @@ Ghi chú tính toán:
 - `remainingM3` `[BỔ SUNG V3]` = `capacityM3 − usedM3 − reservedInboundM3`. Trừ cả phần đã đặt chỗ để khớp luật chặn CAPACITY_EXCEEDED (mục 2.3): FE hiển thị còn trống bao nhiêu thì BE cho đăng ký phiếu nhập tối đa bấy nhiêu.
 - `usedPercent` `[BỔ SUNG V3]` = `usedM3 / capacityM3 × 100`, làm tròn 1 chữ số thập phân; `capacityM3 = 0` thì trả 0. Chỉ dùng `usedM3`, không cộng `reservedInboundM3`. `usedPercent` ở các dashboard (mục 2.6) tính cùng cách.
 
-Lỗi thường gặp: 400 VALIDATION_ERROR, 401 UNAUTHENTICATED, 403 FORBIDDEN, 403 ACCOUNT_LOCKED, 404 USER_NOT_FOUND, 409 EMAIL_ALREADY_EXISTS, 401 INVALID_CREDENTIALS, 403 CUSTOMER_PROFILE_REQUIRED, 409 CUSTOMER_PROFILE_EXISTS.
+Lỗi thường gặp: 400 VALIDATION_ERROR, 400 INVALID_OR_EXPIRED_VERIFICATION_TOKEN, 401 UNAUTHENTICATED, 401 INVALID_CREDENTIALS, 403 FORBIDDEN, 403 ACCOUNT_LOCKED, 403 EMAIL_NOT_VERIFIED, 404 USER_NOT_FOUND, 409 EMAIL_ALREADY_EXISTS, 403 CUSTOMER_PROFILE_REQUIRED, 409 CUSTOMER_PROFILE_EXISTS, 503 EMAIL_VERIFICATION_UNAVAILABLE.
 
 ### 2.2. Sản phẩm và tồn kho (BE 1)
 
@@ -371,6 +375,7 @@ Gửi tự động: khi đơn xuất chuyển IN_DELIVERY (`mark-in-delivery`), 
 | 401 | UNAUTHENTICATED | Thiếu, sai hoặc hết hạn JWT |
 | 403 | FORBIDDEN | Không có quyền thực hiện |
 | 403 | ACCOUNT_LOCKED | Tài khoản bị khóa, không được đăng nhập |
+| 403 | EMAIL_NOT_VERIFIED | Email chưa được xác minh |
 | 404 | RESOURCE_NOT_FOUND | Không tìm thấy dữ liệu |
 | 409 | RESOURCE_CONFLICT | Trùng dữ liệu hoặc sai trạng thái nghiệp vụ |
 | 409 | INSUFFICIENT_STOCK | Tồn kho không đủ |
@@ -379,6 +384,8 @@ Gửi tự động: khi đơn xuất chuyển IN_DELIVERY (`mark-in-delivery`), 
 | 401 | INVALID_CREDENTIALS | Sai email/mật khẩu, hoặc tài khoản chỉ có Google |
 | 403 | CUSTOMER_PROFILE_REQUIRED | Khách chưa có hồ sơ nên chưa dùng được nghiệp vụ kho |
 | 409 | CUSTOMER_PROFILE_EXISTS | Tài khoản đã có hồ sơ khách hàng |
+| 400 | INVALID_OR_EXPIRED_VERIFICATION_TOKEN | Link xác minh không hợp lệ hoặc đã hết hạn |
+| 503 | EMAIL_VERIFICATION_UNAVAILABLE | Không thể gửi email xác minh |
 | 409 | CAPACITY_EXCEEDED | Vượt hạn mức dung tích thuê |
 | 422 | OVERDUE_DEBT | Còn hóa đơn quá hạn, tạm chặn tạo phiếu/đơn mới |
 | 422 | COD_OFFSET_EXCEEDED | Tổng hóa đơn cấn trừ lớn hơn tiền COD đã thu |

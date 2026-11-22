@@ -28,7 +28,7 @@ Không chạy lại file khởi tạo. Đối chiếu schema hiện có và áp 
 1. `2026-11-04-account-setup-token.sql`
 2. `2026-11-10-outbound-invoice-notes.sql`
 
-Các migration không được chạy lặp lại: trước khi áp dụng, kiểm tra xem các cột và constraint mà chúng thêm đã tồn tại chưa. Bản `warehouse_db.sql` hiện tại đã bao gồm các thay đổi này. Sao lưu database trước khi thay đổi schema.
+`2026-11-04-account-setup-token.sql` kiểm tra trước khi thêm các cột và unique index, nên có thể chạy trên cả database cũ lẫn database mới được tạo từ `warehouse_db.sql`; các thành phần đã tồn tại sẽ được bỏ qua. Các migration khác không tự kiểm tra cấu trúc, vì vậy hãy đối chiếu schema trước khi chạy và chỉ áp dụng phần còn thiếu. Sao lưu database trước khi thay đổi schema.
 
 ## 2. Mở thư mục Backend
 
@@ -89,24 +89,30 @@ $env:DB_USERNAME = "root"
 $env:DB_PASSWORD = ""
 ```
 
-`JWT_SECRET` là bắt buộc. Tạo secret riêng cho môi trường local, tối thiểu 32 byte UTF-8:
+`JWT_SECRET` là bắt buộc. Chỉ cần tạo secret riêng cho máy local một lần và lưu ở biến môi trường cấp User của Windows:
 
 ```powershell
 $bytes = New-Object byte[] 32
 $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-$rng.GetBytes($bytes)
-$env:JWT_SECRET = [Convert]::ToBase64String($bytes)
-$rng.Dispose()
+try {
+    $rng.GetBytes($bytes)
+    $secret = [Convert]::ToBase64String($bytes)
+    [Environment]::SetEnvironmentVariable("JWT_SECRET", $secret, [EnvironmentVariableTarget]::User)
+    $env:JWT_SECRET = $secret
+}
+finally {
+    $rng.Dispose()
+}
 ```
 
-Chạy profile `dev` để bật endpoint đăng nhập phục vụ kiểm thử Swagger:
+Đóng và mở lại VS Code để các terminal và tiến trình backend nhận biến mới. Những lần khởi động sau không cần tạo lại `JWT_SECRET`. Chạy profile `dev` để bật endpoint đăng nhập phục vụ kiểm thử Swagger:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE = "dev"
 .\mvnw.cmd spring-boot:run
 ```
 
-Giữ terminal chạy backend mở trong khi sử dụng ứng dụng; nhấn `Ctrl+C` để dừng. Các biến `$env:...` chỉ tồn tại trong terminal hiện tại. Tạo lại `JWT_SECRET` sẽ làm các JWT đã phát hành bởi secret cũ không còn hợp lệ.
+Giữ terminal chạy backend mở trong khi sử dụng ứng dụng; nhấn `Ctrl+C` để dừng. Các biến cấu hình khác được đặt bằng `$env:...` chỉ tồn tại trong terminal hiện tại. Không tạo lại `JWT_SECRET` mỗi lần chạy: thay đổi secret sẽ làm các JWT đã phát hành bằng secret cũ không còn hợp lệ.
 
 Google OAuth2 không bắt buộc để chạy backend. Để bật đăng nhập Google, cấu hình `GOOGLE_OAUTH_ENABLED=true`, `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET`; thông tin OAuth của Google cũng phải cho phép đúng callback URL của backend. Các cấu hình VNPay và email chỉ cần thiết khi kiểm thử các tích hợp tương ứng.
 

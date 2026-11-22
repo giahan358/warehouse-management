@@ -2,6 +2,9 @@ package com.warehouse.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.warehouse.common.enums.UserRole;
+import com.warehouse.common.enums.UserStatus;
+import com.warehouse.user.model.User;
+import com.warehouse.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import javax.crypto.SecretKey;
@@ -11,6 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -49,16 +53,27 @@ public class JwtConfiguration {
     }
 
     @Bean
-    public Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
+    public Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter(
+            UserRepository userRepository) {
         return jwt -> {
             UserRole role;
             try {
                 role = UserRole.valueOf(jwt.getClaimAsString("role"));
             } catch (RuntimeException exception) {
-                throw new org.springframework.security.authentication.BadCredentialsException(
-                        "JWT role claim is invalid", exception);
+                throw new BadCredentialsException("JWT role claim is invalid", exception);
             }
-            SessionPrincipal principal = new SessionPrincipal(jwt.getSubject(), role);
+            Long userId;
+            try {
+                userId = Long.valueOf(jwt.getSubject());
+            } catch (RuntimeException exception) {
+                throw new BadCredentialsException("JWT subject must be a user ID", exception);
+            }
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new BadCredentialsException("JWT subject does not identify a user"));
+            if (user.getStatus() == UserStatus.LOCKED) {
+                throw new AccountLockedAuthenticationException();
+            }
+            SessionPrincipal principal = new SessionPrincipal(user.getEmail(), role);
             return UsernamePasswordAuthenticationToken.authenticated(
                     principal, jwt, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
         };
