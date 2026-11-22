@@ -25,6 +25,18 @@ public class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {
             HttpServletRequest request,
             HttpServletResponse response,
             AuthenticationException authException) throws IOException, ServletException {
+        if (authException instanceof AccountLockedAuthenticationException) {
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            objectMapper.writeValue(
+                    response.getOutputStream(),
+                    new ApiErrorResponse(
+                            "ACCOUNT_LOCKED",
+                            "Tài khoản đã bị khóa",
+                            null));
+            return;
+        }
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());

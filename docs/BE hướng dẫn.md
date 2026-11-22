@@ -230,6 +230,7 @@ Lưu ý: Controller không nên code trước toàn bộ nghiệp vụ. Nhóm c�
 
 Dùng MySQL 8.0.16 trở lên. Schema và dữ liệu mẫu nằm trong [`docs/warehouse_db.sql`](docs/warehouse_db.sql).
 Khi cập nhật database đã có, áp dụng các script migration tương ứng trong `docs/migrations/`; không chạy lại `warehouse_db.sql` trên database cần giữ dữ liệu vì script khởi tạo này xóa và tạo lại các bảng.
+Migration `2026-11-04-account-setup-token.sql` bỏ qua các cột và unique index đã có. Migration `2026-11-22-email-verification.sql` thêm trạng thái và token xác minh email; các tài khoản hiện hữu được giữ là đã xác minh. Cả hai migration có thể chạy lại và bỏ qua thành phần đã tồn tại. Chọn đúng database trước khi chạy migration; không chạy trực tiếp trên môi trường cần giữ nguyên nếu chưa sao lưu/được phê duyệt.
 
 ## 5. Cấu hình và chạy backend
 
@@ -240,8 +241,8 @@ Backend lấy thông tin kết nối từ biến môi trường:
 | `DB_URL` | `jdbc:mysql://localhost:3306/warehouse_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8` |
 | `DB_USERNAME` | `warehouse_app` |
 | `DB_PASSWORD` | Mật khẩu bạn đặt khi tạo MySQL user |
-| `MAIL_USERNAME` | Gmail dùng để gửi email thông báo; cần khi sử dụng tính năng mời nhân viên |
-| `MAIL_PASSWORD` | Google App Password (không phải mật khẩu đăng nhập Gmail); cần khi sử dụng email |
+| `MAIL_USERNAME` | Gmail dùng để gửi email; bắt buộc cho đăng ký/xác minh email và các chức năng gửi thư |
+| `MAIL_PASSWORD` | Google App Password (không phải mật khẩu đăng nhập Gmail); bắt buộc khi sử dụng SMTP |
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Thông tin merchant của VNPay Sandbox; không đưa secret thật lên source control |
 | `VNPAY_PAY_URL` | URL thanh toán VNPay; mặc định là VNPay Sandbox |
 | `VNPAY_RETURN_URL` | URL callback trình duyệt của backend, ví dụ `http://localhost:8080/api/v1/payments/vnpay/return` |
@@ -256,13 +257,14 @@ Backend lấy thông tin kết nối từ biến môi trường:
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth Client credentials khi bật Google login; không commit secret |
 | `CORS_ALLOWED_ORIGINS` | Danh sách origin frontend được phép, phân cách bằng dấu phẩy; ví dụ `http://localhost:5173` hoặc domain frontend khi triển khai |
 | `FRONTEND_BASE_URL` | URL frontend cho redirect OAuth; mặc định `http://localhost:5173` |
+| `BACKEND_BASE_URL` | URL backend dùng trong link xác minh email; mặc định `http://localhost:8080` |
 | `SHOW_SQL`, `FORMAT_SQL` | Bật/tắt log câu SQL và format SQL; mặc định `false` |
 | `HIBERNATE_SQL_LOG_LEVEL` | Mức log câu SQL; mặc định `WARN`, tránh bật parameter/bind trace trên dữ liệu thật |
 
 Frontend chọn địa chỉ API bằng `VITE_API_BASE_URL` (ví dụ `https://api.example.com/api/v1`). Khi FE và BE chạy trên các máy/môi trường khác nhau, FE phải trỏ tới hostname/IP mà trình duyệt truy cập được; không dùng `localhost` trừ khi FE và BE cùng chạy trên máy người dùng. Origin FE phải được khai báo trong `CORS_ALLOWED_ORIGINS`. Với JWT, FE gửi `Authorization: Bearer <accessToken>`; không cần cấu hình cookie credentials.
 
 Không đưa `JWT_SECRET` hoặc thông tin xác thực Google vào source control. Tạo một secret riêng, ngẫu nhiên cho từng môi trường triển khai.
-Nếu chưa cấu hình SMTP, ứng dụng vẫn có thể khởi động nhưng thao tác gửi email mời nhân viên sẽ trả lỗi `EMAIL_NOT_CONFIGURED`.
+Nếu chưa cấu hình SMTP, ứng dụng vẫn có thể khởi động nhưng đăng ký email mới trả `EMAIL_VERIFICATION_UNAVAILABLE`; các luồng gửi thư khác báo lỗi cấu hình tương ứng.
 Nếu chưa cấu hình VNPay, tạo URL thanh toán trả `VNPAY_NOT_CONFIGURED`; thanh toán IPN thật cần cấu hình đúng merchant sandbox. Mock IPN mặc định tắt và chỉ hoạt động với profile phát triển.
 Danh sách CORS phải gồm origin đầy đủ dạng `http(s)://host[:port]`, không thêm path hoặc dấu `/` cuối. Backend không bật cookie credentials; frontend gửi access token qua header `Authorization: Bearer <token>`. Để kết nối từ máy khác, ngoài `SERVER_ADDRESS=0.0.0.0`, cần dùng IP/hostname backend mà trình duyệt truy cập được và mở cổng tương ứng trên firewall/network.
 

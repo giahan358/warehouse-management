@@ -4,6 +4,7 @@ import com.warehouse.common.enums.LoginMethod;
 import com.warehouse.common.enums.UserRole;
 import com.warehouse.common.enums.UserStatus;
 import com.warehouse.common.exception.BusinessException;
+import com.warehouse.common.util.DatabaseConstraintUtils;
 import com.warehouse.common.response.PageResponse;
 import com.warehouse.common.util.EnumParser;
 import com.warehouse.user.dto.CreateUserRequest;
@@ -20,6 +21,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -106,7 +108,7 @@ public class UserServiceImpl implements UserService {
         }
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new BusinessException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email đã được sử dụng");
+            throw emailAlreadyExists();
         }
         if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new BusinessException(
@@ -122,7 +124,15 @@ public class UserServiceImpl implements UserService {
         user.setStatus(UserStatus.ACTIVE);
         user.setCreatedAt(java.time.LocalDateTime.now(BUSINESS_ZONE));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        userRepository.save(user);
+        user.setEmailVerified(true);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            if (DatabaseConstraintUtils.isUniqueConstraintViolation(exception, "email")) {
+                throw emailAlreadyExists();
+            }
+            throw exception;
+        }
         Long createdUserId = user.getId();
         UserWithOrganizationProjection createdUser =
                 userRepository.findUserWithOrganizationById(createdUserId).orElse(null);
@@ -186,5 +196,9 @@ public class UserServiceImpl implements UserService {
 
     private BusinessException userNotFound(Long id) {
         return new BusinessException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản " + id);
+    }
+
+    private BusinessException emailAlreadyExists() {
+        return new BusinessException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email đã được sử dụng");
     }
 }

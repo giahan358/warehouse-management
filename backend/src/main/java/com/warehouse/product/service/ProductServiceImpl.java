@@ -28,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -117,12 +118,16 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public ProductResponse update(Long id, String email, String role, UpdateProductRequest request) {
-        Product product = productRepository.findById(id).orElseThrow(() -> productNotFound(id));
-        ensureCanManage(product.getCustomerId(), email, role);
+        ProductProjection current = findProductView(id);
+        ensureCanManage(current.getCustomerId(), email, role);
+        Customer customer = customerRepository.findLockedById(current.getCustomerId())
+                .orElseThrow(() -> customerNotFound(current.getCustomerId()));
+        Product product = productRepository.findLockedById(id).orElseThrow(() -> productNotFound(id));
         validateDimensions(request.lengthCm(), request.widthCm(), request.heightCm());
         ensureSkuAvailable(product.getCustomerId(), request.sku(), id);
+        ensureCapacityForVolumeChange(customer, product, request);
         applyProductFields(product, request);
         return saveAndRead(product);
     }
@@ -204,6 +209,24 @@ public class ProductServiceImpl implements ProductService {
         if (exists) {
             throw new BusinessException(
                     HttpStatus.CONFLICT, "PRODUCT_SKU_ALREADY_EXISTS", "SKU đã tồn tại trong danh mục khách hàng");
+        }
+    }
+
+    private void ensureCapacityForVolumeChange(Customer customer, Product product, UpdateProductRequest request) {
+        BigDecimal oldVolume = product.getVolumeM3() == null ? BigDecimal.ZERO : product.getVolumeM3();
+        BigDecimal newVolume = calculateVolume(request.lengthCm(), request.widthCm(), request.heightCm());
+        BigDecimal productQuantity = customerRepository.sumStoredQuantityByProduct(
+                        customer.getId(), product.getId())
+                .add(customerRepository.sumReservedQuantityByProduct(customer.getId(), product.getId()));
+        BigDecimal volumeChange = newVolume.subtract(oldVolume).multiply(productQuantity);
+        BigDecimal totalVolume = customerRepository.sumStoredVolume(customer.getId())
+                .add(customerRepository.sumReservedInboundVolume(customer.getId()))
+                .add(volumeChange);
+        if (totalVolume.compareTo(customer.getCapacityM3()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "CAPACITY_EXCEEDED",
+                    "Thay đổi kích thước sản phẩm làm vượt quá dung tích kho đã đăng ký");
         }
     }
 

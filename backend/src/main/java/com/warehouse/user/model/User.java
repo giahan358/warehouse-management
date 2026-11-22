@@ -50,6 +50,18 @@ public class User {
     @Column(name = "lock_reason", length = 255)
     private String lockReason;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = true;
+
+    @Column(name = "email_verification_token_hash", length = 64)
+    private String emailVerificationTokenHash;
+
+    @Column(name = "email_verification_expires_at")
+    private LocalDateTime emailVerificationExpiresAt;
+
+    @Column(name = "email_verification_sent_at")
+    private LocalDateTime emailVerificationSentAt;
+
     @Column(name = "password_setup_token_hash", length = 64)
     private String passwordSetupTokenHash;
 
@@ -137,6 +149,38 @@ public class User {
 
     public void setLockReason(String lockReason) {
         this.lockReason = lockReason;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public String getEmailVerificationTokenHash() {
+        return emailVerificationTokenHash;
+    }
+
+    public void setEmailVerificationTokenHash(String emailVerificationTokenHash) {
+        this.emailVerificationTokenHash = emailVerificationTokenHash;
+    }
+
+    public LocalDateTime getEmailVerificationExpiresAt() {
+        return emailVerificationExpiresAt;
+    }
+
+    public void setEmailVerificationExpiresAt(LocalDateTime emailVerificationExpiresAt) {
+        this.emailVerificationExpiresAt = emailVerificationExpiresAt;
+    }
+
+    public LocalDateTime getEmailVerificationSentAt() {
+        return emailVerificationSentAt;
+    }
+
+    public void setEmailVerificationSentAt(LocalDateTime emailVerificationSentAt) {
+        this.emailVerificationSentAt = emailVerificationSentAt;
     }
 
     public String getPasswordSetupTokenHash() {

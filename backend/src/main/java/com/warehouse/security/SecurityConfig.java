@@ -8,11 +8,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -25,18 +27,24 @@ public class SecurityConfig {
             ObjectProvider<ClientRegistrationRepository> clientRegistrations,
             GoogleOAuth2UserService googleOAuth2UserService,
             GoogleOAuth2SuccessHandler googleOAuth2SuccessHandler,
+            OAuth2AuthorizationRequestCookieRepository authorizationRequestRepository,
             ObjectMapper objectMapper,
             Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter,
             @Value("${app.frontend.base-url:http://localhost:5173}") String frontendBaseUrl) throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .requestCache(cache -> cache.requestCache(new NullRequestCache()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/dev-login",
                                 "/api/v1/auth/setup-password",
+                                "/api/v1/auth/verify-email",
+                                "/api/v1/auth/resend-verification",
                                 "/api/v1/payments/vnpay/return",
                                 "/api/v1/payments/vnpay/ipn",
                                 "/oauth2/**",
@@ -58,6 +66,8 @@ public class SecurityConfig {
 
         if (clientRegistrations.getIfAvailable() != null) {
             http.oauth2Login(oauth2 -> oauth2
+                    .authorizationEndpoint(endpoint ->
+                            endpoint.authorizationRequestRepository(authorizationRequestRepository))
                     .userInfoEndpoint(userInfo -> userInfo.userService(googleOAuth2UserService))
                     .successHandler(googleOAuth2SuccessHandler)
                     .failureHandler((request, response, exception) -> {
