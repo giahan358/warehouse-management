@@ -142,6 +142,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         Customer customer = ownCustomer(email);
         ensureNoOverdueDebt(customer.getId());
         validateUniqueProducts(request.items());
+        ensureSupportedCarrier(request.carrier());
         BigDecimal codAmount = request.codAmount() == null ? ZERO : request.codAmount();
         if (codAmount.signum() < 0 || (request.paymentMethod() == PaymentMethod.COD && codAmount.signum() <= 0)
                 || (request.paymentMethod() != PaymentMethod.COD && codAmount.signum() != 0)) {
@@ -261,6 +262,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Override
     @Transactional
     public OutboundOrderDetailResponse updateTracking(Long id, UpdateTrackingRequest request) {
+        ensureSupportedCarrier(request.carrier());
         OutboundOrder order = lockOrder(id);
         if (order.getStatus() != OutboundStatus.PACKED && order.getStatus() != OutboundStatus.IN_DELIVERY) {
             throw invalidStatus();
@@ -383,6 +385,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private OutboundOrder findOrder(Long id) {
         return orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Đơn xuất", id));
+    }
+
+    private void ensureSupportedCarrier(Carrier carrier) {
+        if (carrier == Carrier.GHTK) throw badRequest("GHTK không còn là đơn vị vận chuyển được hỗ trợ");
     }
 
     private OutboundOrder lockOrder(Long id) {

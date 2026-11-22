@@ -24,6 +24,7 @@ export const INVOICE_STATUS = {
   PENDING: { label: 'CHỜ THANH TOÁN', ...orange },
   PROCESSING: { label: 'ĐANG XỬ LÝ', ...blue },
   OVERDUE: { label: 'QUÁ HẠN NỘP CƯỚC', ...red },
+  CANCELLED: { label: 'ĐÃ HỦY', ...gray },
 }
 
 export const STOCK_STATUS = {
@@ -40,9 +41,11 @@ export const ACCOUNT_STATUS = {
 
 // ===== Nhân viên kho =====
 export const TASK_STATUS = {
+  SCHEDULED: { label: 'SCHEDULED', ...orange },
   RECEIVING: { label: 'RECEIVING', ...blue },
   PENDING: { label: 'PENDING', ...gray },
   PREPARING: { label: 'PREPARING', ...orange },
+  PACKED: { label: 'PACKED', ...cyan },
   IN_DELIVERY: { label: 'IN_DELIVERY', ...blue },
 }
 
@@ -53,6 +56,8 @@ export const FULFILLMENT_STATUS = {
   PACKED: { label: 'Đã đóng gói', ...cyan },
   HANDED_OVER: { label: 'Đã bàn giao xe', ...gray },
   IN_DELIVERY: { label: 'Đang giao hàng', ...blue },
+  DELIVERED: { label: 'Giao thành công', ...green },
+  RETURNED: { label: 'Chuyển hoàn kho', ...red },
 }
 
 export const FULFILLMENT_NEXT = {
@@ -66,6 +71,7 @@ export const STAFF_STOCK_STATUS = {
   SAFE: { label: 'Đủ an toàn', ...cyan },
   LOW: { label: 'Cảnh báo thiếu', ...blue },
   OUT: { label: 'Hết hàng', ...red },
+  EXPIRING: { label: 'Cận hạn sử dụng', ...orange },
 }
 
 export const APPEARANCE_OPTIONS = [

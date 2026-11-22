@@ -16,8 +16,7 @@ const TABS = [
   { key: 'ALL', label: 'Tất cả' },
   { key: 'WAITING', label: 'Chờ xe đến' },
   { key: 'AT_DOCK', label: 'Đang tại Dock' },
-  { key: 'UNLOADING', label: 'Đang dỡ hàng' },
-  { key: 'DONE', label: 'Hoàn tất hôm nay' },
+  { key: 'DONE', label: 'Đã xác nhận nhập' },
 ]
 
 const DOCK_CLASS = { primary: 'code-chip', cyan: 'code-chip cyan', gray: 'code-chip gray' }
@@ -25,6 +24,7 @@ const DOCK_CLASS = { primary: 'code-chip', cyan: 'code-chip cyan', gray: 'code-c
 export default function StaffInboundSchedulePage() {
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
+  const [statusCounts, setStatusCounts] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('ALL')
   const [keyword, setKeyword] = useState('')
@@ -35,8 +35,14 @@ export default function StaffInboundSchedulePage() {
   // fetch async/await, setState nằm sau await → không bị lint
   const load = useCallback(async () => {
     try {
-      const d = await inboundApi.getSchedule()
+      const [d, counts] = await Promise.all([
+        inboundApi.getSchedule({ page: 0, size: 100 }),
+        inboundApi.getStatusCounts(),
+      ])
       setRows(d)
+      setStatusCounts(counts)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được lịch nhập kho')
     } finally {
       setLoading(false)
     }
@@ -49,10 +55,12 @@ export default function StaffInboundSchedulePage() {
     await load()
   }
 
-  const counts = useMemo(
-    () => Object.fromEntries(TABS.map((t) => [t.key, t.key === 'ALL' ? rows.length : rows.filter((r) => r.phase === t.key).length])),
-    [rows],
-  )
+  const counts = {
+    ALL: statusCounts?.all ?? 0,
+    WAITING: statusCounts?.scheduled ?? 0,
+    AT_DOCK: statusCounts?.receiving ?? 0,
+    DONE: statusCounts?.confirmed ?? 0,
+  }
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
@@ -76,7 +84,7 @@ export default function StaffInboundSchedulePage() {
   // POST /inbound-receipts/{id}/start: SCHEDULED → RECEIVING (khóa quyền hủy của khách)
   const doCheckin = async () => {
     try {
-      await inboundApi.startReceipt(checkin.id)
+      await inboundApi.startReceipt(checkin.receiptId ?? checkin.id, checkin.dock)
       setRows((rs) => rs.map((r) => (r.id === checkin.id ? { ...r, status: 'RECEIVING', phase: 'AT_DOCK', timeLabel: 'Bắt đầu lúc: vừa xong' } : r)))
       message.success(`Đã chuyển ${checkin.id} sang RECEIVING`)
     } catch {
@@ -130,12 +138,12 @@ export default function StaffInboundSchedulePage() {
       render: (_, r) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           {r.status === 'RECEIVING' && (
-            <Button type="primary" size="small" onClick={() => navigate(`/staff/counting/${r.id}`)}>Mở phiếu kiểm đếm</Button>
+            <Button type="primary" size="small" onClick={() => navigate(`/staff/counting/${r.receiptId ?? r.id}`)}>Mở phiếu kiểm đếm</Button>
           )}
           {r.status === 'SCHEDULED' && (
             <Button type="primary" size="small" onClick={() => setCheckin(r)}>Check-in vào Dock</Button>
           )}
-          <Button size="small" type="text" icon={<EyeOutlined />} aria-label="Xem chi tiết" onClick={() => message.info(`Chi tiết ${r.id} (sẽ làm ở bước sau)`)} />
+          <Button size="small" type="text" icon={<EyeOutlined />} aria-label="Xem chi tiết" onClick={() => navigate(`/staff/counting/${r.receiptId ?? r.id}`)} />
         </span>
       ),
     },

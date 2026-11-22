@@ -27,23 +27,34 @@ export default function CustomerListPage() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
+  const [plan, setPlan] = useState('all')
+  const [feeStatus, setFeeStatus] = useState('all')
+  const [accountStatus, setAccountStatus] = useState('all')
   const [lockTarget, setLockTarget] = useState(null)
   const [detail, setDetail] = useState({ open: false, customer: null })
   const [createOpen, setCreateOpen] = useState(false)
   const [renewTarget, setRenewTarget] = useState(null)
   const navigate = useNavigate()
 
-  useEffect(() => { customerApi.getAll().then((d) => { setRows(d); setLoading(false) }) }, [])
+  useEffect(() => {
+    customerApi.getAll({ page: 0, size: 100 }).then(setRows)
+      .catch((error) => message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được danh sách khách hàng'))
+      .finally(() => setLoading(false))
+  }, [])
 
-  const toggleLock = () => {
-    // TODO: PATCH /users/{id}/status
-    setRows((rs) => rs.map((r) => r.id === lockTarget.id
-      ? { ...r, account: r.account === 'LOCKED' ? 'ACTIVE' : 'LOCKED' } : r))
-    setLockTarget(null)
+  const toggleLock = async () => {
+    if (!lockTarget) return
+    const status = lockTarget.account === 'LOCKED' ? 'ACTIVE' : 'LOCKED'
+    try {
+      await customerApi.setAccountStatus(lockTarget, status)
+      setRows((rs) => rs.map((r) => r.id === lockTarget.id ? { ...r, account: status } : r))
+      message.success(`Đã ${status === 'LOCKED' ? 'khóa' : 'mở khóa'} tài khoản ${lockTarget.code}`)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không cập nhật được trạng thái tài khoản')
+    } finally { setLockTarget(null) }
   }
 
   const renewContract = async () => {
-    // TODO: POST /customers/{id}/contract/renew
     try {
       await customerApi.renewContract(renewTarget.id, 12)
       message.success(`Đã gia hạn hợp đồng ${renewTarget.id} thêm 12 tháng`)
@@ -54,10 +65,13 @@ export default function CustomerListPage() {
   }
 
   const filtered = rows.filter((r) =>
-    `${r.id} ${r.name} ${r.phone}`.toLowerCase().includes(keyword.toLowerCase()))
+    (plan === 'all' || r.plan === plan) &&
+    (feeStatus === 'all' || (feeStatus === 'DEBT' ? r.fee !== 'PAID' : r.fee === feeStatus)) &&
+    (accountStatus === 'all' || r.account === accountStatus) &&
+    `${r.id} ${r.code} ${r.name} ${r.phone} ${r.tax}`.toLowerCase().includes(keyword.trim().toLowerCase()))
 
   const columns = [
-    { title: 'MÃ KHÁCH HÀNG', dataIndex: 'id', render: (v) => <span className="mono-link">{v}</span> },
+    { title: 'MÃ KHÁCH HÀNG', dataIndex: 'code', render: (v) => <span className="mono-link">{v}</span> },
     {
       title: 'TÊN DOANH NGHIỆP / ĐỐI TÁC', dataIndex: 'name', width: 340,
       render: (v, r) => (
@@ -120,18 +134,18 @@ export default function CustomerListPage() {
         <Space wrap style={{ width: '100%' }}>
           <Input style={{ width: 360 }} prefix={<SearchOutlined />} placeholder="Tìm theo Mã KH (CUST-...), tên công ty, số điện thoại..."
             value={keyword} onChange={(e) => setKeyword(e.target.value)} allowClear />
-          <Select style={{ width: 170 }} defaultValue="all" options={[{ value: 'all', label: 'Gói dịch vụ: Tất cả' }, { value: 'ENTERPRISE', label: 'Enterprise' }, { value: 'PRO', label: 'Pro' }, { value: 'STANDARD', label: 'Standard' }]} />
-          <Select style={{ width: 170 }} defaultValue="all" options={[{ value: 'all', label: 'Tình trạng phí: Tất cả' }, { value: 'PAID', label: 'Đã thanh toán' }, { value: 'DEBT', label: 'Nợ phí' }]} />
-          <Select style={{ width: 170 }} defaultValue="all" options={[{ value: 'all', label: 'Trạng thái: Tất cả' }, { value: 'ACTIVE', label: 'Active' }, { value: 'LOCKED', label: 'Locked' }]} />
-          <Button icon={<ReloadOutlined />} onClick={() => setKeyword('')}>Đặt lại</Button>
+          <Select style={{ width: 170 }} value={plan} onChange={setPlan} options={[{ value: 'all', label: 'Gói dịch vụ: Tất cả' }, { value: 'ENTERPRISE', label: 'Enterprise' }, { value: 'PRO', label: 'Pro' }, { value: 'STANDARD', label: 'Standard' }]} />
+          <Select style={{ width: 170 }} value={feeStatus} onChange={setFeeStatus} options={[{ value: 'all', label: 'Tình trạng phí: Tất cả' }, { value: 'PAID', label: 'Đã thanh toán' }, { value: 'DEBT', label: 'Nợ phí' }]} />
+          <Select style={{ width: 170 }} value={accountStatus} onChange={setAccountStatus} options={[{ value: 'all', label: 'Trạng thái: Tất cả' }, { value: 'ACTIVE', label: 'Active' }, { value: 'LOCKED', label: 'Locked' }]} />
+          <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(''); setPlan('all'); setFeeStatus('all'); setAccountStatus('all') }}>Đặt lại</Button>
         </Space>
-        <div className="text-muted" style={{ textAlign: 'right' }}>Hiển thị {filtered.length} trên 148 đối tác</div>
+        <div className="text-muted" style={{ textAlign: 'right' }}>Hiển thị {filtered.length} trên {rows.length} đối tác</div>
       </div>
 
       <Table rowKey="id" loading={loading} columns={columns} dataSource={filtered}
         rowClassName={(r) => (r.account === 'LOCKED' ? 'row-danger' : '')}
         scroll={{ x: 1100 }}
-        pagination={{ total: 148, pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Tổng cộng ${t} khách hàng` }} />
+        pagination={{ total: filtered.length, pageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showTotal: (t) => `Tổng cộng ${t} khách hàng` }} />
 
       <ConfirmModal open={!!lockTarget} danger={lockTarget?.account !== 'LOCKED'}
         title={lockTarget?.account === 'LOCKED' ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}

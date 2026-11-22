@@ -1,12 +1,15 @@
-import { Menu} from 'antd'
+import { Menu } from 'antd'
+import { useEffect, useState } from 'react'
 import {
   AppstoreOutlined, ShopOutlined, InboxOutlined, ImportOutlined,
   ExportOutlined, FileTextOutlined, SafetyCertificateOutlined, ContainerOutlined,
-  CheckSquareOutlined, AimOutlined
+  CheckSquareOutlined, AimOutlined, MailOutlined
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { ROLES } from '../constants/roles'
+import dashboardApi from '../api/dashboardApi'
+import { USE_MOCK } from '../api/axiosClient'
 
 const ADMIN_CUSTOMER = [ROLES.ADMIN, ROLES.CUSTOMER]
 const ADMIN = [ROLES.ADMIN]
@@ -28,6 +31,7 @@ const groups = [
     items: [
       { key: '/invoices', label: 'Hóa đơn & Phí VNPay', icon: <FileTextOutlined />, roles: ADMIN },
       { key: '/users', label: 'Tài khoản & Phân quyền', icon: <SafetyCertificateOutlined />, roles: ADMIN },
+      { key: '/emails', label: 'Lịch sử gửi email', icon: <MailOutlined />, roles: ADMIN },
     ],
   },
   {
@@ -47,6 +51,16 @@ export default function Sidebar({ collapsed }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const isStaff = user.role === ROLES.STAFF
+  const [zoneA, setZoneA] = useState(null)
+
+  useEffect(() => {
+    if (user.role !== ROLES.ADMIN || USE_MOCK) return
+    let active = true
+    dashboardApi.getZoneUsage()
+      .then((zones) => { if (active) setZoneA(zones.find((zone) => zone.zone === 'A') ?? null) })
+      .catch(() => { if (active) setZoneA(null) })
+    return () => { active = false }
+  }, [user.role])
 
   const items = groups
     .map((g) => ({
@@ -78,10 +92,12 @@ export default function Sidebar({ collapsed }) {
           </div>
         )}
       </div>
-      {!collapsed && !isStaff && (
+      {!collapsed && user.role === ROLES.ADMIN && (
         <div className="warehouse-switch">
           <b>Kho Tân Bình Central</b>
-          <span className="text-muted">Zone A - 84% Tải</span>
+          <span className="text-muted">
+            {zoneA?.usedPercent == null ? 'Zone A - Chưa cấu hình sức chứa' : `Zone A - ${zoneA.usedPercent}% Tải`}
+          </span>
         </div>
       )}
       <Menu

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { USE_MOCK } from '../api/axiosClient'
 import authApi from '../api/authApi'
+import { clearAccessToken } from '../api/authToken'
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'logistorage_user'
@@ -23,7 +24,12 @@ export function AuthProvider({ children }) {
     let active = true
     authApi.me()
       .then((currentUser) => { if (active) setUser(currentUser) })
-      .catch(() => { if (active) setUser(null) })
+      .catch((error) => {
+        if (active) {
+          if (error?.response?.status === 401) clearAccessToken()
+          setUser(null)
+        }
+      })
       .finally(() => { if (active) setIsLoading(false) })
     return () => { active = false }
   }, [])

@@ -21,7 +21,10 @@ export default function StockHistoryDrawer({ open, item, onClose }) {
     if (!open || !item) return
     setLoading(true)
     setLogs([])
-    inventoryApi.getStockHistory(item.sku).then(setLogs).finally(() => setLoading(false))
+    inventoryApi.getStockHistory(item.productId ?? item.sku)
+      .then(setLogs)
+      .catch((error) => message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được lịch sử tồn kho'))
+      .finally(() => setLoading(false))
   }, [open, item])
 
   return (

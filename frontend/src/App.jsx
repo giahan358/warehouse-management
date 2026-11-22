@@ -2,6 +2,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import viVN from 'antd/locale/vi_VN';
 import CustomerRoutes from './routes/CustomerRoutes';
+import AppRoutes from './routes/AppRoutes';
+import { AuthProvider } from './contexts/AuthContext';
+import AuthLayout from './layouts/AuthLayout';
+import LoginPage from './pages/auth/LoginPage';
+import CustomerLoginPage from './pages/auth/CustomerLoginPage';
 import './assets/styles/customer.css';
 
 function App() {
@@ -18,12 +23,19 @@ function App() {
         },
       }}
     >
-      <BrowserRouter>
-        <Routes>
-          <Route path="/customer/*" element={<CustomerRoutes />} />
-          <Route path="*" element={<Navigate to="/customer/overview" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<AuthLayout />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/customer/login" element={<CustomerLoginPage />} />
+            </Route>
+            <Route path="/customer/*" element={<CustomerRoutes />} />
+            <Route path="/*" element={<AppRoutes />} />
+            <Route path="*" element={<Navigate to="/customer/login" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </ConfigProvider>
   );
 }

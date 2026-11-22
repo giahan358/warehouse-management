@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Progress, Table } from 'antd'
+import { Button, Progress, Table, message } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import inboundApi from '../../api/inboundApi'
 import PageHeader from '../../components/common/PageHeader'
@@ -13,8 +13,11 @@ export default function StaffCountingListPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    inboundApi.getSchedule().then((d) => {
+    inboundApi.getSchedule({ page: 0, size: 100 }).then((d) => {
       setRows(d.filter((r) => r.status === 'RECEIVING'))
+      setLoading(false)
+    }).catch((error) => {
+      message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được danh sách phiếu kiểm đếm')
       setLoading(false)
     })
   }, [])
@@ -28,8 +31,7 @@ export default function StaffCountingListPage() {
     { title: 'TRẠNG THÁI', dataIndex: 'status', render: (v) => <StatusTag map={INBOUND_STATUS} status={v} /> },
     {
       title: '', align: 'right',
-      // Mock chỉ có 1 phiếu chi tiết mẫu; khi có BE sẽ mở đúng phiếu theo id
-      render: (_, r) => <Button type="primary" size="small" onClick={() => navigate(`/staff/counting/${r.id}`)}>Mở phiếu kiểm đếm</Button>,
+      render: (_, r) => <Button type="primary" size="small" onClick={() => navigate(`/staff/counting/${r.receiptId ?? r.id}`)}>Mở phiếu kiểm đếm</Button>,
     },
   ]
 
