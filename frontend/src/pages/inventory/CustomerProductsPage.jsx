@@ -207,9 +207,9 @@ export default function ProductsPage() {
             <Form.Item name="barcode" label="Barcode"><Input maxLength={50} /></Form.Item>
             <Form.Item name="category" label="Danh mục"><Select allowClear options={categories} /></Form.Item>
             <Form.Item name="unit" label="Đơn vị tính" rules={[{ required: true }]}><Input maxLength={30} /></Form.Item>
-            <Form.Item name="lengthCm" label="Chiều dài (cm)"><InputNumber min={0} precision={2} className="full-width" /></Form.Item>
-            <Form.Item name="widthCm" label="Chiều rộng (cm)"><InputNumber min={0} precision={2} className="full-width" /></Form.Item>
-            <Form.Item name="heightCm" label="Chiều cao (cm)"><InputNumber min={0} precision={2} className="full-width" /></Form.Item>
+            <Form.Item name="lengthCm" label="Chiều dài (cm)" rules={[{ required: true, message: 'Nhập chiều dài.' }, { type: 'number', min: 0.01, message: 'Kích thước phải từ 0,01 cm.' }]}><InputNumber min={0.01} precision={2} className="full-width" /></Form.Item>
+            <Form.Item name="widthCm" label="Chiều rộng (cm)" rules={[{ required: true, message: 'Nhập chiều rộng.' }, { type: 'number', min: 0.01, message: 'Kích thước phải từ 0,01 cm.' }]}><InputNumber min={0.01} precision={2} className="full-width" /></Form.Item>
+            <Form.Item name="heightCm" label="Chiều cao (cm)" rules={[{ required: true, message: 'Nhập chiều cao.' }, { type: 'number', min: 0.01, message: 'Kích thước phải từ 0,01 cm.' }]}><InputNumber min={0.01} precision={2} className="full-width" /></Form.Item>
           </div>
           <Form.Item name="description" label="Mô tả"><Input.TextArea rows={3} /></Form.Item>
         </Form>

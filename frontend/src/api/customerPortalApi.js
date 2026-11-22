@@ -11,13 +11,22 @@ function unwrap(response) {
 
 function getPage(response) {
   const body = response.data
-  const data = body && typeof body === 'object' && 'data' in body ? body.data : body
-  if (!Array.isArray(data)) {
-    throw new Error('Dữ liệu danh sách trả về không đúng định dạng.')
+  const page = unwrap(response)
+  if (!page || typeof page !== 'object' || !Array.isArray(page.content)) {
+    throw new Error('Dữ liệu phân trang trả về không đúng định dạng.')
   }
+  const meta = body?.meta && typeof body.meta === 'object'
+    ? body.meta
+    : {
+      page: page.page,
+      size: page.size,
+      totalElements: page.totalElements,
+      totalPages: page.totalPages,
+    }
+
   return {
-    items: data,
-    meta: body && typeof body === 'object' ? body.meta : null,
+    items: page.content,
+    meta,
   }
 }
 
@@ -67,6 +76,7 @@ export const customerApi = {
     getById: async (id) => unwrap(await axiosClient.get(`/outbound-orders/${id}`)),
     create: async (payload) => unwrap(await axiosClient.post('/outbound-orders', payload)),
     cancel: async (id, payload = {}) => unwrap(await axiosClient.patch(`/outbound-orders/${id}/cancel`, payload)),
+    getMyCodOrders: async (params) => getPage(await axiosClient.get('/cod/me', { params })),
   },
 
   products: {

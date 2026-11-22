@@ -32,6 +32,7 @@ import { customerApi, getApiErrorMessage } from '../../api/customerPortalApi';
 import ApiPanel from '../../components/common/ApiPanel';
 import CustomerPageHeader from '../../components/common/CustomerPageHeader';
 import CustomerStatusTag from '../../components/common/CustomerStatusTag';
+import { toApiDateTime } from '../../utils/customerDateTime';
 import useApiData from '../../utils/useApiData';
 import { formatDate, formatNumber } from '../../utils/customerFormatters';
 
@@ -43,12 +44,6 @@ function localDateTimeValue(value) {
   if (Number.isNaN(date.getTime())) return null;
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 16);
-}
-
-function toApiDateTime(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 export default function InboundPage() {
@@ -232,7 +227,7 @@ export default function InboundPage() {
 
   const columns = [
     { title: 'Mã phiếu ASN', dataIndex: 'receiptCode', key: 'receiptCode', render: (value) => <Typography.Text code>{value}</Typography.Text> },
-    { title: 'Ngày tạo', dataIndex: 'createdAt', key: 'createdAt', render: (value) => formatDate(value, true) },
+    { title: 'Ngày thực nhận', dataIndex: 'receivedAt', key: 'receivedAt', render: (value) => formatDate(value, true) },
     { title: 'Giờ dự kiến', dataIndex: 'expectedAt', key: 'expectedAt', render: (value) => <Space><CalendarOutlined />{formatDate(value, true)}</Space> },
     { title: 'Biển số xe', dataIndex: 'vehiclePlate', key: 'vehiclePlate', render: (value) => value || '—' },
     { title: 'Khai báo', dataIndex: 'declaredTotal', key: 'declaredTotal', render: (value) => formatNumber(value) },
@@ -328,7 +323,7 @@ export default function InboundPage() {
             <Col xs={24} md={6}><Form.Item name="timeSlot" label="Ca giao xe" rules={[{ required: true }]}><Select options={[{ value: 'MORNING', label: 'Buổi sáng' }, { value: 'AFTERNOON', label: 'Buổi chiều' }]} /></Form.Item></Col>
             <Col xs={24} md={6}><Form.Item name="vehiclePlate" label="Biển số xe"><Input maxLength={20} /></Form.Item></Col>
           </Row>
-          <Form.Item name="note" label="Ghi chú"><Input.TextArea maxLength={1000} rows={2} /></Form.Item>
+          <Form.Item name="note" label="Ghi chú"><Input.TextArea maxLength={5000} rows={2} /></Form.Item>
           <Typography.Title level={5}>Sản phẩm dự kiến nhập</Typography.Title>
           <Form.List name="items">
             {(fields, { add, remove }) => (
@@ -354,7 +349,7 @@ export default function InboundPage() {
             <Col span={12}><Form.Item name="timeSlot" label="Ca giao xe" rules={[{ required: true }]}><Select options={[{ value: 'MORNING', label: 'Buổi sáng' }, { value: 'AFTERNOON', label: 'Buổi chiều' }]} /></Form.Item></Col>
             <Col span={12}><Form.Item name="vehiclePlate" label="Biển số xe"><Input maxLength={20} /></Form.Item></Col>
           </Row>
-          <Form.Item name="note" label="Ghi chú"><Input.TextArea maxLength={1000} rows={3} /></Form.Item>
+          <Form.Item name="note" label="Ghi chú"><Input.TextArea maxLength={5000} rows={3} /></Form.Item>
         </Form>
       </Modal>
 

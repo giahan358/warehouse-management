@@ -38,9 +38,17 @@ const countFields = {
   PACKED: 'packed',
   IN_DELIVERY: 'inDelivery',
 };
+const codStatusLabels = {
+  NONE: 'Không áp dụng',
+  PENDING_RECONCILE: 'Chờ đối soát',
+  COLLECTED: 'Đã thu hộ',
+  CONFIRMED: 'Đã xác nhận đối soát',
+  RETURNED: 'Đã hoàn hàng',
+};
 
 export default function OutboundPage() {
   const [page, setPage] = useState(0);
+  const [codPage, setCodPage] = useState(0);
   const [status, setStatus] = useState('');
   const [keyword, setKeyword] = useState('');
   const [searchText, setSearchText] = useState('');
@@ -56,9 +64,14 @@ export default function OutboundPage() {
   );
   const loadCounts = useCallback(() => customerApi.outbound.getStatusCounts(), []);
   const loadInventory = useCallback(() => customerApi.inventory.getList({ page: 0, size: 100 }), []);
+  const loadCodOrders = useCallback(
+    () => customerApi.outbound.getMyCodOrders({ page: codPage, size: pageSize }),
+    [codPage],
+  );
   const orders = useApiData(loadOrders);
   const counts = useApiData(loadCounts);
   const inventory = useApiData(loadInventory);
+  const codOrders = useApiData(loadCodOrders);
 
   const refresh = () => {
     orders.reload();
@@ -80,6 +93,15 @@ export default function OutboundPage() {
   };
 
   const submitCreate = async (values) => {
+    const productIds = values.items.map((item) => item.productId);
+    if (new Set(productIds).size !== productIds.length) {
+      message.error('Mỗi sản phẩm chỉ được thêm một lần trong cùng yêu cầu xuất.');
+      return;
+    }
+    if (values.paymentMethod === 'COD' && Number(values.codAmount) <= 0) {
+      message.error('Số tiền thu hộ COD phải lớn hơn 0.');
+      return;
+    }
     if (!inventory.data) {
       message.error(inventory.error || 'Chưa tải được tồn kho để tạo yêu cầu xuất.');
       return;
@@ -172,6 +194,16 @@ export default function OutboundPage() {
     { title: 'Đơn giá dịch vụ', dataIndex: 'unitPrice', key: 'unitPrice', render: formatCurrency },
   ];
 
+  const codColumns = [
+    { title: 'Mã đơn', dataIndex: 'orderCode', key: 'orderCode', render: (value) => <Typography.Text code>{value}</Typography.Text> },
+    { title: 'Mã vận đơn', dataIndex: 'trackingCode', key: 'trackingCode', render: (value) => value || '—' },
+    { title: 'Trạng thái giao hàng', dataIndex: 'shippingStatus', key: 'shippingStatus', render: (value) => <CustomerStatusTag status={value} /> },
+    { title: 'Trạng thái đối soát', dataIndex: 'codStatus', key: 'codStatus', render: (value) => <CustomerStatusTag status={value} label={codStatusLabels[value]} /> },
+    { title: 'Tiền thu hộ', dataIndex: 'codAmount', key: 'codAmount', render: formatCurrency },
+    { title: 'Đã cấn trừ', dataIndex: 'offsetTotal', key: 'offsetTotal', render: formatCurrency },
+    { title: 'Còn lại', dataIndex: 'remainingAmount', key: 'remainingAmount', render: formatCurrency },
+  ];
+
   return (
     <>
       <CustomerPageHeader
@@ -232,6 +264,27 @@ export default function OutboundPage() {
         </ApiPanel>
       </Card>
 
+      <Card title="Theo dõi đối soát COD" className="customer-data-card" variant="borderless">
+        <ApiPanel loading={codOrders.loading} error={codOrders.error} onRetry={codOrders.reload}>
+          {codOrders.data && (
+            <Table
+              rowKey="orderId"
+              columns={codColumns}
+              dataSource={codOrders.data.items}
+              size="middle"
+              scroll={{ x: 900 }}
+              pagination={{
+                current: codPage + 1,
+                pageSize,
+                total: codOrders.data.meta?.totalElements ?? codOrders.data.items.length,
+                showSizeChanger: false,
+                onChange: (current) => setCodPage(current - 1),
+              }}
+            />
+          )}
+        </ApiPanel>
+      </Card>
+
       <Modal title="Tạo yêu cầu xuất kho" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => form.submit()} confirmLoading={busy} okText="Gửi yêu cầu" width={880}>
         <Form form={form} layout="vertical" initialValues={{ paymentMethod: 'VNPAY', items: [{}] }} onFinish={submitCreate}>
           <Typography.Title level={5}>Thông tin người nhận</Typography.Title>
@@ -243,7 +296,7 @@ export default function OutboundPage() {
           <Form.Item name="deliveryAddress" label="Địa chỉ giao hàng" rules={[{ required: true }]}><Input.TextArea maxLength={500} rows={2} /></Form.Item>
           <Row gutter={12}>
             <Col xs={24} md={12}><Form.Item name="paymentMethod" label="Phương thức thanh toán" rules={[{ required: true }]}><Select options={[{ value: 'VNPAY', label: 'VNPay' }, { value: 'COD', label: 'Thu hộ COD' }]} /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item noStyle shouldUpdate={(previous, current) => previous.paymentMethod !== current.paymentMethod}>{({ getFieldValue }) => getFieldValue('paymentMethod') === 'COD' ? <Form.Item name="codAmount" label="Số tiền thu hộ" rules={[{ required: true }]}><InputNumber min={0} precision={0} className="full-width" addonAfter="đ" /></Form.Item> : null}</Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item noStyle shouldUpdate={(previous, current) => previous.paymentMethod !== current.paymentMethod}>{({ getFieldValue }) => getFieldValue('paymentMethod') === 'COD' ? <Form.Item name="codAmount" label="Số tiền thu hộ" rules={[{ required: true, message: 'Nhập số tiền thu hộ.' }, { type: 'number', min: 1, message: 'Số tiền thu hộ phải lớn hơn 0.' }]}><InputNumber min={1} precision={0} className="full-width" addonAfter="đ" /></Form.Item> : null}</Form.Item></Col>
           </Row>
           <Form.Item name="note" label="Ghi chú"><Input.TextArea maxLength={200} rows={2} /></Form.Item>
           <Typography.Title level={5}>Sản phẩm cần xuất</Typography.Title>

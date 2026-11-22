@@ -20,6 +20,9 @@ const statusLabels = {
   LOW: 'Sắp hết',
   OUT_OF_STOCK: 'Hết hàng',
   NEAR_EXPIRY: 'Gần hết hạn',
+  NONE: 'Không áp dụng',
+  PENDING_RECONCILE: 'Chờ đối soát',
+  COLLECTED: 'Đã thu hộ',
 };
 
 const statusColors = {
@@ -42,9 +45,12 @@ const statusColors = {
   LOW: 'warning',
   OUT_OF_STOCK: 'error',
   NEAR_EXPIRY: 'orange',
+  NONE: 'default',
+  PENDING_RECONCILE: 'processing',
+  COLLECTED: 'blue',
 };
 
-export default function StatusTag({ status }) {
+export default function StatusTag({ status, label }) {
   if (!status) return <Tag>Chưa cập nhật</Tag>;
-  return <Tag color={statusColors[status] || 'default'}>{statusLabels[status] || status}</Tag>;
+  return <Tag color={statusColors[status] || 'default'}>{label || statusLabels[status] || status}</Tag>;
 }
