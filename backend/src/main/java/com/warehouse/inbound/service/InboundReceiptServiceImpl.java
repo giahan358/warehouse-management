@@ -228,9 +228,9 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
         ensureOwner(receipt, email);
         ensureStatus(receipt, InboundStatus.SCHEDULED);
         InboundReceiptItem item = findItem(id, itemId);
-        Customer customer = lockCustomer(receipt.getCustomerId());
         Product product = findOwnedProduct(item.getProductId(), receipt.getCustomerId());
         ensureActiveAndSized(product);
+        Customer customer = lockCustomer(receipt.getCustomerId());
         BigDecimal volumeChange = product.getVolumeM3().multiply(
                 request.expectedQuantity().subtract(item.getExpectedQuantity()));
         ensureCapacity(customer, volumeChange);
