@@ -4,6 +4,16 @@ import { SafetyCertificateOutlined } from '@ant-design/icons'
 import userApi from '../../api/userApi'
 import PopupHeader, { modalStyles } from '../common/PopupHeader'
 import { permissionScopesMock } from '../../mocks/popupData'
+import { USE_MOCK } from '../../api/axiosClient'
+
+const SCOPE_GROUP = {
+  users: 'accountManagement', lock: 'accountManagement', internal: 'accountManagement', admin: 'accountManagement',
+  contracts: 'customerManagement',
+  inventory: 'productAndInventory',
+  inbound: 'inboundOperations',
+  outbound: 'outboundOperations',
+  payment: 'invoicesAndPayments',
+}
 
 // Modal "Cấu hình quyền & chính sách bảo vệ Tenant" — PATCH /users/{id}/roles
 export default function UserPermissionModal({ open, user, onClose, onSaved }) {
@@ -12,7 +22,22 @@ export default function UserPermissionModal({ open, user, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (open) setChecked(Object.fromEntries(scopes.map((s) => [s.key, !!s.checked])))
+    if (!open || !user) return
+    if (USE_MOCK) {
+      setChecked(Object.fromEntries(scopes.map((s) => [s.key, !!s.checked])))
+      return
+    }
+    userApi.getPermissionMatrix().then((matrix) => {
+      const groups = new Map((matrix?.groups ?? []).map((group) => [group.name, group.roles]))
+      const roleKey = user.role === 'STAFF' ? 'WAREHOUSE_STAFF' : user.role
+      setChecked(Object.fromEntries(scopes.map((scope) => [
+        scope.key,
+        Boolean(groups.get(SCOPE_GROUP[scope.key])?.[roleKey]),
+      ])))
+    }).catch((error) => {
+      setChecked(Object.fromEntries(scopes.map((s) => [s.key, !!s.checked])))
+      message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được ma trận quyền từ Backend')
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, user])
 

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Input, Space, Table, Tooltip } from 'antd'
+import { Button, Input, Space, Table, Tooltip, message } from 'antd'
 import {
   PlusSquareOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, AuditOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import inventoryApi from '../../api/inventoryApi'
-import { zonesMock } from '../../mocks/data'
+import dashboardApi from '../../api/dashboardApi'
 import PageHeader from '../../components/common/PageHeader'
 import SkuCreateModal from '../../components/forms/SkuCreateModal'
 import StockHistoryDrawer from '../../components/forms/StockHistoryDrawer'
@@ -16,14 +16,16 @@ import { STOCK_STATUS } from '../../constants/statuses'
 import { formatNumber } from '../../utils/formatCurrency'
 
 const FILTERS = [
-  { key: 'ALL', label: 'Tất cả (3,420)' },
-  { key: 'SAFE', label: 'Tồn An Toàn (3,190)' },
-  { key: 'LOW', label: 'Tồn Thấp / Cảnh Báo (198)' },
-  { key: 'OUT', label: 'Hết Hàng / Stock-out (32)' },
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'SAFE', label: 'Tồn An Toàn' },
+  { key: 'LOW', label: 'Tồn Thấp / Cảnh Báo' },
+  { key: 'OUT', label: 'Hết Hàng / Stock-out' },
 ]
 
 export default function InventoryPage() {
   const [rows, setRows] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
   const [filter, setFilter] = useState('ALL')
@@ -33,11 +35,38 @@ export default function InventoryPage() {
   const [history, setHistory] = useState({ open: false, item: null })
   const [relocation, setRelocation] = useState({ open: false, targets: [] })
 
-  useEffect(() => { inventoryApi.getAll().then((d) => { setRows(d); setLoading(false) }) }, [])
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [items, counts] = await Promise.all([
+        inventoryApi.getAll({ page: 0, size: 100 }),
+        inventoryApi.getSummary(),
+      ])
+      setRows(items)
+      setSummary(counts)
+      try {
+        setZones(await dashboardApi.getZoneUsage())
+      } catch {
+        setZones([])
+      }
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được dữ liệu tồn kho')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
 
   const data = useMemo(() => rows.filter((r) =>
     (filter === 'ALL' || r.status === filter) &&
     `${r.sku} ${r.name} ${r.bin}`.toLowerCase().includes(keyword.toLowerCase())), [rows, filter, keyword])
+  const filterLabels = FILTERS.map((item) => ({
+    ...item,
+    label: `${item.label} (${summary ? ({
+      ALL: summary.total,
+      SAFE: summary.safe,
+      LOW: summary.low,
+      OUT: summary.outOfStock,
+    }[item.key] ?? '—') : '—'})`,
+  }))
 
   const columns = [
     {
@@ -86,7 +115,7 @@ export default function InventoryPage() {
       <PageHeader
         eyebrow="KHO TRUNG TÂM TÂN BÌNH / QUẢN TRỊ TỒN KHO ĐA KHÁCH HÀNG"
         title="Tồn kho toàn diện & Danh mục SKU"
-        tag="3,420 SKU Hoạt động"
+        tag={`${summary?.total ?? '—'} SKU Hoạt động`}
         subtitle="Theo dõi thực tế, phân bổ vị trí Bin/Rack và kiểm soát hàng quá hạn cho các tài khoản đối tác lưu kho."
         extra={(
           <Space>
@@ -106,7 +135,7 @@ export default function InventoryPage() {
         </Space>
         <Space wrap style={{ marginTop: 12 }}>
           <span className="eyebrow">TRẠNG THÁI TỒN:</span>
-          {FILTERS.map((f) => (
+          {filterLabels.map((f) => (
             <Button key={f.key} size="small" type={filter === f.key ? 'primary' : 'default'} onClick={() => setFilter(f.key)}>{f.label}</Button>
           ))}
         </Space>
@@ -128,37 +157,38 @@ export default function InventoryPage() {
       <Table rowKey="sku" loading={loading} columns={columns} dataSource={data}
         rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }} scroll={{ x: 1300 }}
         rowClassName={(r) => (r.status === 'EXPIRING' ? 'row-danger' : r.status === 'OUT' ? 'row-muted' : '')}
-        pagination={{ total: 3420, pageSize: 20, showSizeChanger: true, showQuickJumper: true }} />
+        pagination={{ total: summary?.total ?? 0, pageSize: 20, showSizeChanger: true, showQuickJumper: true }} />
 
       <div className="card-flat" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
             <b style={{ fontSize: 16 }}>Tỷ Lệ Lấp Đầy Vị Trí Lưu Kho Tân Bình (Capacity Allocation)</b>
-            <div className="text-muted">Giám sát tải trọng và dung tích pallet thực tế theo từng phân vùng Zone</div>
+            <div className="text-muted">Giám sát thể tích hàng đang sử dụng theo sức chứa cấu hình của từng Zone</div>
           </div>
           <Space size={16} className="text-muted">
-            <span><span style={{ color: '#0057c2' }}>■</span> Đang chứa</span>
-            <span><span style={{ color: '#afc6ff' }}>■</span> Đặt trước (COD/Inbound)</span>
-            <span><span style={{ color: '#e5eeff' }}>■</span> Còn trống</span>
+            <span><span style={{ color: '#0057c2' }}>■</span> Đang sử dụng</span>
+            <span><span style={{ color: '#e5eeff' }}>■</span> Sức chứa còn lại</span>
           </Space>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {zonesMock.map((z) => (
-            <div key={z.name} style={{ background: '#eff4ff', borderRadius: 8, padding: 12 }}>
+          {zones.map((z) => {
+            const percent = z.usedPercent == null ? null : Math.min(100, Math.max(0, Number(z.usedPercent)))
+            const used = Number(z.usedM3 ?? 0)
+            const capacity = Number(z.capacityM3 ?? 0)
+            return <div key={z.zone} style={{ background: '#eff4ff', borderRadius: 8, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                <span>{z.name}</span><span style={{ color: '#0057c2' }}>{z.load}% Tải</span>
+                <span>Zone {z.zone}</span><span style={{ color: '#0057c2' }}>{percent == null ? 'Chưa cấu hình sức chứa' : `${percent}% Tải`}</span>
               </div>
               <div style={{ margin: '8px 0' }}>
-                <SegmentedBar height={10} parts={[{ value: z.load - 8, color: '#0057c2' }, { value: 8, color: '#afc6ff' }]} />
+                <SegmentedBar height={10} parts={[{ value: percent ?? 0, color: '#0057c2' }, { value: percent == null ? 0 : 100 - percent, color: '#e5eeff' }]} />
               </div>
               <div className="mono text-muted" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Đã dùng: {formatNumber(z.used)} / {formatNumber(z.total)} Pallets</span>
-                <span style={z.warn ? { color: '#ba1a1a', fontWeight: 700 } : undefined}>
-                  {z.warn ? `Gần Đầy: ${z.free} Pallets` : `Trống: ${z.free} Pallets`}
-                </span>
+                <span>Đã dùng: {formatNumber(used)} / {formatNumber(capacity)} m³</span>
+                <span>{percent == null ? '—' : `Còn ${formatNumber(Math.max(0, capacity - used))} m³`}</span>
               </div>
             </div>
-          ))}
+          })}
+          {!zones.length && <div className="text-muted">BE chưa trả dữ liệu sử dụng theo zone.</div>}
         </div>
       </div>
 
@@ -166,7 +196,7 @@ export default function InventoryPage() {
       <AuditModal open={auditOpen} onClose={() => setAuditOpen(false)} />
       <StockHistoryDrawer open={history.open} item={history.item} onClose={() => setHistory((h) => ({ ...h, open: false }))} />
       <RelocationModal open={relocation.open} targets={relocation.targets}
-        onClose={() => setRelocation((r) => ({ ...r, open: false }))} onDone={() => setSelectedKeys([])} />
+        onClose={() => setRelocation((r) => ({ ...r, open: false }))} onDone={() => { setSelectedKeys([]); load() }} />
     </div>
   )
 }

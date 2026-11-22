@@ -9,6 +9,19 @@ const axiosClient = axios.create({
 });
 
 axiosClient.interceptors.request.use((config) => {
+  const path = String(config.url ?? '').split('?')[0].replace(/\/+$/, '')
+  const publicEndpoints = new Set([
+    '/auth/login',
+    '/auth/register',
+    '/auth/setup-password',
+    '/auth/dev-login',
+    '/payments/vnpay/return',
+    '/payments/vnpay/ipn',
+  ])
+  if (publicEndpoints.has(path)) {
+    delete config.headers.Authorization
+    return config
+  }
   const token = getAccessToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config

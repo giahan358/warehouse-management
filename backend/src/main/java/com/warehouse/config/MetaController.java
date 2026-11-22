@@ -27,7 +27,7 @@ public class MetaController {
     @GetMapping("/options")
     public ApiResponse<Map<String, List<String>>> options() {
         Map<String, List<String>> options = Map.of(
-                "carriers", Arrays.stream(Carrier.values()).map(Enum::name).toList(),
+                "carriers", Arrays.stream(Carrier.values()).filter(carrier -> carrier != Carrier.GHTK).map(Enum::name).toList(),
                 "categories", names(ProductCategory.values()),
                 "servicePackages", names(ServicePackage.values()),
                 "units", List.of("thùng", "hộp", "gói", "kiện", "m3", "chuyến", "kỳ"),

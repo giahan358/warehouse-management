@@ -82,7 +82,7 @@ export function CustomerHeader({ user }) {
   const logout = async () => {
     try {
       await customerApi.logout();
-      window.location.assign('/customer/overview');
+      window.location.assign('/customer/login');
     } catch (error) {
       message.error(getApiErrorMessage(error));
     }

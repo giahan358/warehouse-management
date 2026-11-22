@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Avatar, Button, Input, Select, Space, Table, Tag } from 'antd'
+import { Avatar, Button, Input, Select, Space, Table, Tag, message } from 'antd'
 import {
   UserAddOutlined, SearchOutlined, ClearOutlined, DeleteOutlined, SafetyOutlined,
   ShopOutlined, TeamOutlined,
@@ -24,17 +24,43 @@ export default function UserListPage() {
   const [loading, setLoading] = useState(true)
   const [keyword, setKeyword] = useState('')
   const [role, setRole] = useState('all')
+  const [provider, setProvider] = useState('all')
+  const [status, setStatus] = useState('all')
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [permission, setPermission] = useState({ open: false, user: null })
 
-  useEffect(() => { userApi.getAll().then((d) => { setRows(d); setLoading(false) }) }, [])
+  useEffect(() => {
+    userApi.getAll({ page: 0, size: 100 }).then(setRows)
+      .catch((error) => message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được danh sách tài khoản'))
+      .finally(() => setLoading(false))
+  }, [])
 
-  const unlock = (id) => // TODO: PATCH /users/{id}/status
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: 'ACTIVE' } : r)))
+  const unlock = async (id) => {
+    try {
+      const row = await userApi.updateStatus(id, 'ACTIVE')
+      setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...row } : r)))
+      message.success('Đã mở khóa tài khoản')
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không mở khóa được tài khoản')
+    }
+  }
+
+  const deleteUser = async () => {
+    if (!deleteTarget) return
+    try {
+      await userApi.remove(deleteTarget.id)
+      setRows((rs) => rs.filter((r) => r.id !== deleteTarget.id))
+      setDeleteTarget(null)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không xóa được tài khoản')
+    }
+  }
 
   const data = rows.filter((r) =>
     (role === 'all' || r.role === role) &&
+    (provider === 'all' || r.provider === provider) &&
+    (status === 'all' || r.status === status) &&
     `${r.name} ${r.email} ${r.id}`.toLowerCase().includes(keyword.toLowerCase()))
 
   const columns = [
@@ -80,7 +106,7 @@ export default function UserListPage() {
       <PageHeader
         eyebrow="PORTAL QUẢN TRỊ / HỆ THỐNG & BẢO MẬT / QUẢN LÝ TÀI KHOẢN & PHÂN QUYỀN"
         title="Quản trị Tài khoản & Phân quyền Hệ thống"
-        extra={<Button type="primary" size="large" icon={<UserAddOutlined />} onClick={() => setCreateOpen(true)}>Tạo tài khoản mới (POST /users)</Button>}
+        extra={<Button type="primary" size="large" icon={<UserAddOutlined />} onClick={() => setCreateOpen(true)}>Tạo tài khoản mới</Button>}
       />
 
       <div className="card-flat" style={{ marginBottom: 16 }}>
@@ -88,28 +114,28 @@ export default function UserListPage() {
           <Input style={{ width: 320 }} prefix={<SearchOutlined />} placeholder="Tìm tên, email, SĐT, mã USR-..." value={keyword} onChange={(e) => setKeyword(e.target.value)} />
           <Select style={{ width: 170 }} value={role} onChange={setRole}
             options={[{ value: 'all', label: 'Tất cả Vai trò' }, ...Object.values(ROLES).map((v) => ({ value: v, label: ROLE_LABELS[v] }))]} />
-          <Select style={{ width: 190 }} defaultValue="all" options={[{ value: 'all', label: 'Tất cả Phương thức' }, { value: 'Google', label: 'Google' }, { value: 'Email', label: 'Email' }]} />
-          <Select style={{ width: 170 }} defaultValue="all" options={[{ value: 'all', label: 'Tất cả Trạng thái' }, { value: 'ACTIVE', label: 'Active' }, { value: 'LOCKED', label: 'Locked' }]} />
-          <Button icon={<ClearOutlined />} onClick={() => { setKeyword(''); setRole('all') }}>Đặt lại</Button>
-          <Button type="primary" icon={<SearchOutlined />}>Tìm kiếm</Button>
+          <Select style={{ width: 190 }} value={provider} onChange={setProvider} options={[{ value: 'all', label: 'Tất cả Phương thức' }, { value: 'Google', label: 'Google' }, { value: 'Email', label: 'Email' }]} />
+          <Select style={{ width: 170 }} value={status} onChange={setStatus} options={[{ value: 'all', label: 'Tất cả Trạng thái' }, { value: 'ACTIVE', label: 'Active' }, { value: 'LOCKED', label: 'Locked' }]} />
+          <Button icon={<ClearOutlined />} onClick={() => { setKeyword(''); setRole('all'); setProvider('all'); setStatus('all') }}>Đặt lại</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => setKeyword((value) => value.trim())}>Tìm kiếm</Button>
         </Space>
       </div>
 
       <div className="card-flat" style={{ padding: 0 }}>
         <div style={{ padding: 16 }}>
-          <b>Danh mục Người dùng & Ủy quyền</b> <span className="chip">Hiển thị {data.length} / 182 kết quả</span>
+          <b>Danh mục Người dùng & Ủy quyền</b> <span className="chip">Hiển thị {data.length} / {rows.length} kết quả</span>
         </div>
         <Table rowKey="id" loading={loading} columns={columns} dataSource={data} rowSelection={{}}
           rowClassName={(r) => (r.status === 'LOCKED' ? 'row-danger' : '')} scroll={{ x: 1000 }}
-          pagination={{ total: 182, pageSize: 10, showSizeChanger: true, showTotal: (t) => `Tổng cộng ${t} bản ghi`, style: { padding: '0 16px' } }} />
+          pagination={{ total: data.length, pageSize: 10, showSizeChanger: true, showTotal: (t) => `Tổng cộng ${t} bản ghi`, style: { padding: '0 16px' } }} />
       </div>
 
       <ConfirmModal open={!!deleteTarget} danger title="Xóa tài khoản"
         content={`Bạn có chắc muốn xóa tài khoản ${deleteTarget?.name}?`}
-        onOk={() => { setRows((rs) => rs.filter((r) => r.id !== deleteTarget.id)); setDeleteTarget(null) }}
+        onOk={deleteUser}
         onCancel={() => setDeleteTarget(null)} />
 
-      <UserCreateModal open={createOpen} nextCustomerCode={`CUST-B2B-${String(100 + rows.filter((r) => r.role === 'CUSTOMER').length).padStart(4, '0')}`}
+      <UserCreateModal open={createOpen}
         onClose={() => setCreateOpen(false)} onCreated={(row) => setRows((rs) => [row, ...rs])} />
       <UserPermissionModal open={permission.open} user={permission.user}
         onClose={() => setPermission((p) => ({ ...p, open: false }))} />

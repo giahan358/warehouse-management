@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Button, Modal, Table } from 'antd'
+import { Button, Modal, Table, message } from 'antd'
 import { CheckSquareOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import inboundApi from '../../api/inboundApi'
 import { formatNumber } from '../../utils/formatCurrency'
 
 const label = { fontSize: 11, color: '#727786', textTransform: 'uppercase' }
 
-export default function AsnDetailModal({ open, receiptId, onClose, onCount }) {
+export default function AsnDetailModal({ open, receiptId, onClose, onCount, readOnly = false }) {
   // Lưu kết quả kèm id; chỉ setState trong callback của API, không setState đồng bộ trong effect
   const [result, setResult] = useState({ id: null, data: null })
 
@@ -15,7 +15,7 @@ export default function AsnDetailModal({ open, receiptId, onClose, onCount }) {
     let cancelled = false
     inboundApi.getAsnDetail(receiptId).then((data) => {
       if (!cancelled) setResult({ id: receiptId, data })
-    })
+    }).catch((error) => message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được chi tiết phiếu ASN'))
     return () => { cancelled = true }
   }, [open, receiptId])
 
@@ -43,18 +43,18 @@ export default function AsnDetailModal({ open, receiptId, onClose, onCount }) {
       destroyOnClose
       title={
         <span>
-          Chi tiết Phiếu Nhập Kho ASN: <span className="mono">{receiptId}</span>{' '}
+          Chi tiết Phiếu Nhập Kho ASN: <span className="mono">{asn?.id ?? receiptId}</span>{' '}
           {asn && <span className="chip">{asn.dockLabel}</span>}
         </span>
       }
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <Button onClick={onClose}>Đóng</Button>
-          <span style={{ display: 'inline-flex', gap: 8 }}>
+          {!readOnly && <span style={{ display: 'inline-flex', gap: 8 }}>
             <Button type="primary" icon={<CheckSquareOutlined />} disabled={!asn} onClick={onCount}>
               Vào màn hình Kiểm đếm & Nhập SL thực tế
             </Button>
-          </span>
+          </span>}
         </div>
       }
     >
@@ -85,9 +85,9 @@ export default function AsnDetailModal({ open, receiptId, onClose, onCount }) {
       </div>
       <Table rowKey="sku" size="small" loading={loading} columns={columns} dataSource={asn?.lines ?? []} pagination={false} scroll={{ x: 760 }} />
 
-      <div style={{ marginTop: 16, padding: 8, background: '#e6f0ff', borderRadius: 8, fontSize: 13 }}>
+      {!readOnly && <div style={{ marginTop: 16, padding: 8, background: '#e6f0ff', borderRadius: 8, fontSize: 13 }}>
         <InfoCircleOutlined style={{ color: '#0057c2' }} /> Bước tiếp theo: quét barcode từng Pallet và kiểm đếm thực tế để đối soát độ lệch so với ASN.
-      </div>
+      </div>}
     </Modal>
   )
 }

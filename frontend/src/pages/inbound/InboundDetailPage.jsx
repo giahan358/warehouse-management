@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import inboundApi from '../../api/inboundApi'
+import { USE_MOCK } from '../../api/axiosClient'
 import PageHeader from '../../components/common/PageHeader'
 import Loading from '../../components/common/Loading'
 import SegmentedBar from '../../components/common/SegmentedBar'
@@ -42,13 +43,18 @@ export default function InboundDetailPage() {
   const [onlyAbnormal, setOnlyAbnormal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [discrepancyReport, setDiscrepancyReport] = useState(null)
   const [, setSubmitting] = useState(false) 
 
   const load = useCallback(async () => {
     try {
       const r = await inboundApi.getReceiptById(id)
       setReceipt(r)
-      setLines(r.lines)
+      setLines(r.lines ?? [])
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được chi tiết phiếu nhập')
     } finally {
       setLoading(false)
     }
@@ -78,17 +84,20 @@ export default function InboundDetailPage() {
   const allCounted = lines.length > 0 && stats.countedLines === lines.length
 
   const handleScan = () => {
-    const code = scan.trim().toLowerCase()
-    if (!code) return
-    const hit = lines.find((l) => l.barcode === code || l.sku.toLowerCase() === code)
-    if (!hit) {
-      message.error(`Không tìm thấy SKU / barcode "${scan}" trong phiếu này`)
-    } else {
-      addQty(hit.sku, 1)
-      setActiveSku(hit.sku)
+    const barcode = scan.trim()
+    if (!barcode) return
+    if (USE_MOCK) {
+      const hit = lines.find((line) => line.barcode === barcode.toLowerCase() || line.sku.toLowerCase() === barcode.toLowerCase())
+      if (!hit) message.error(`Không tìm thấy SKU / barcode "${barcode}" trong phiếu này`)
+      else { addQty(hit.sku, 1); setActiveSku(hit.sku) }
+      setScan('')
+      scanRef.current?.focus()
+      return
     }
-    setScan('')
-    scanRef.current?.focus()
+    inboundApi.scanReceipt(id, barcode, 1)
+      .then(() => load())
+      .catch((error) => message.error(error?.response?.data?.message ?? `Không tìm thấy SKU / barcode "${barcode}" trong phiếu này`))
+      .finally(() => { setScan(''); scanRef.current?.focus() })
   }
 
   const quickAdd = (n) => {
@@ -100,14 +109,22 @@ export default function InboundDetailPage() {
 
   // ===== Lưu tạm & xác nhận =====
   const buildPayload = () => ({
-    lines: lines.map((l) => ({
-      sku: l.sku, actualQuantity: l.actual, damagedQuantity: l.damaged, appearance: l.appearance, note: l.note,
+    items: lines.map((l) => ({
+      itemId: l.itemId,
+      actualQuantity: l.actual,
+      damagedQuantity: l.damaged,
+      locationCode: l.bin && l.bin !== '—' ? l.bin : undefined,
+      note: [l.appearance && l.appearance !== 'OK' ? `Tình trạng: ${l.appearance}` : '', l.note].filter(Boolean).join(' — ') || undefined,
     })),
   })
 
   const saveDraft = async () => {
-    await inboundApi.saveDraft(id, buildPayload())
-    message.success('Đã lưu tạm phiếu kiểm đếm')
+    try {
+      await inboundApi.saveDraft(id, buildPayload())
+      message.success('Đã lưu tạm phiếu kiểm đếm')
+    } catch (error) {
+      message.error(error?.response?.data?.message ?? 'Không lưu được kết quả kiểm đếm')
+    }
   }
 
   const requestConfirm = useCallback(() => {
@@ -125,8 +142,8 @@ export default function InboundDetailPage() {
   const doConfirm = async () => {
     setSubmitting(true)
     try {
-      await inboundApi.confirmReceipt(id, buildPayload())
-      message.success(`Đã xác nhận nhập kho ${id}: +${formatNumber(stats.counted - stats.damaged)} vào tồn kho khả dụng`)
+      await inboundApi.confirmReceipt(id)
+      message.success(`Đã xác nhận nhập kho ${receipt?.id ?? id}: +${formatNumber(stats.counted)} vào tồn kho khả dụng`)
       navigate('/staff/inbound')
     } catch (e) {
       const msg = e?.response?.data?.code ?? 'INVALID_RECEIPT_STATUS'
@@ -137,15 +154,27 @@ export default function InboundDetailPage() {
     }
   }
 
+  const openDiscrepancyReport = async () => {
+    setReportOpen(true)
+    setReportLoading(true)
+    try {
+      setDiscrepancyReport(await inboundApi.getDiscrepancyReport(id))
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được biên bản chênh lệch')
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Enter' && e.target === document.body && !editing && !confirmOpen) requestConfirm()
+      if (e.key === 'Enter' && e.target === document.body && receipt?.status === 'RECEIVING' && !editing && !confirmOpen) requestConfirm()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [requestConfirm, editing, confirmOpen])
+  }, [requestConfirm, editing, confirmOpen, receipt?.status])
 
-  if (loading) return <Loading />
+  if (loading || !receipt) return <Loading />
 
   const visibleLines = onlyAbnormal ? lines.filter(isAbnormal) : lines
 
@@ -199,10 +228,16 @@ export default function InboundDetailPage() {
         title={`Phiếu Kiểm Đếm Thực Tế & Nhập Kho: ${receipt.id}`}
         extra={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button icon={<SaveOutlined />} onClick={saveDraft}>Lưu tạm</Button>
-            <Button type="primary" icon={<LockOutlined />} onClick={requestConfirm}>
-              Xác nhận nhập kho & Cập nhật tồn kho (Idempotent)
-            </Button>
+            {receipt.status === 'CONFIRMED' ? (
+              <Button icon={<InfoCircleOutlined />} onClick={openDiscrepancyReport}>Biên bản chênh lệch</Button>
+            ) : (
+              <>
+                <Button icon={<SaveOutlined />} onClick={saveDraft}>Lưu tạm</Button>
+                <Button type="primary" icon={<LockOutlined />} onClick={requestConfirm}>
+                  Xác nhận nhập kho & Cập nhật tồn kho (Idempotent)
+                </Button>
+              </>
+            )}
           </div>
         }
       />
@@ -328,6 +363,33 @@ export default function InboundDetailPage() {
         onOk={doConfirm}
         onCancel={() => setConfirmOpen(false)}
       />
+      <Modal
+        open={reportOpen}
+        onCancel={() => setReportOpen(false)}
+        title={`Biên bản chênh lệch: ${discrepancyReport?.receiptCode ?? receipt.id}`}
+        footer={<Button onClick={() => setReportOpen(false)}>Đóng</Button>}
+        width={820}
+      >
+        <div style={{ display: 'flex', gap: 24, marginBottom: 12 }}>
+          <span>Thiếu tổng: <b>{formatNumber(discrepancyReport?.shortageTotal ?? 0)}</b></span>
+          <span>Hư hỏng tổng: <b>{formatNumber(discrepancyReport?.damagedTotal ?? 0)}</b></span>
+        </div>
+        <Table
+          rowKey="itemId"
+          loading={reportLoading}
+          pagination={false}
+          dataSource={discrepancyReport?.items ?? []}
+          columns={[
+            { title: 'SKU / SẢN PHẨM', render: (_, item) => <><b>{item.sku}</b><div className="text-muted">{item.productName}</div></> },
+            { title: 'DỰ KIẾN', dataIndex: 'expectedQuantity', align: 'right', render: (value) => formatNumber(value) },
+            { title: 'THỰC TẾ', dataIndex: 'actualQuantity', align: 'right', render: (value) => value == null ? '—' : formatNumber(value) },
+            { title: 'HƯ HỎNG', dataIndex: 'damagedQuantity', align: 'right', render: (value) => formatNumber(value) },
+            { title: 'CHÊNH LỆCH', dataIndex: 'variance', align: 'right', render: (value) => value == null ? '—' : formatNumber(value) },
+            { title: 'GHI CHÚ', dataIndex: 'note' },
+          ]}
+          locale={{ emptyText: 'Phiếu này không có dòng chênh lệch hoặc hư hỏng' }}
+        />
+      </Modal>
     </div>
   )
 }

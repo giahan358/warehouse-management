@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Dropdown, Input, Select, Table } from 'antd'
+import { Button, Dropdown, Input, Select, Table, message } from 'antd'
 import {
   CarOutlined, CheckSquareOutlined, InboxOutlined, FormOutlined, FilterOutlined,
   ReloadOutlined, SearchOutlined, ClockCircleOutlined, MoreOutlined, ProfileOutlined,
@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import dashboardApi from '../../api/dashboardApi'
 import inventoryApi from '../../api/inventoryApi'
+import inboundApi from '../../api/inboundApi'
 import PageHeader from '../../components/common/PageHeader'
 import StatCard from '../../components/common/StatCard'
 import StatusTag from '../../components/common/StatusTag'
@@ -44,9 +45,12 @@ export default function StaffDashboard() {
 
   // setState chỉ nằm trong callback của API (loading mặc định đã là true ở lần tải đầu)
   const fetchData = () =>
-    Promise.all([dashboardApi.getStaffDashboard(), inventoryApi.getStaffInventory()]).then(([d, s]) => {
+    Promise.all([dashboardApi.getStaffDashboard(), inventoryApi.getStaffInventory({ page: 0, size: 100 })]).then(([d, s]) => {
       setData(d)
       setStock(s)
+      setLoading(false)
+    }).catch((error) => {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được dữ liệu bàn làm việc')
       setLoading(false)
     })
 
@@ -198,7 +202,16 @@ export default function StaffDashboard() {
         open={!!asnTask}
         receiptId={asnTask?.receiptId}
         onClose={() => setAsnTask(null)}
-        onCount={() => { navigate(asnTask.to); setAsnTask(null) }}
+        onCount={async () => {
+          try {
+            await inboundApi.startReceipt(asnTask.receiptId)
+            navigate(asnTask.to)
+            setAsnTask(null)
+            await fetchData()
+          } catch (error) {
+            message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không thể bắt đầu tiếp nhận phiếu ASN')
+          }
+        }}
       />
     </div>
   )

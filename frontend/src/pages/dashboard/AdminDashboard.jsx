@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Col, Row, Segmented } from 'antd'
+import { Col, Row, Segmented, message } from 'antd'
 import {
   AppstoreOutlined, ShopOutlined, ImportOutlined, ExportOutlined,
   DollarOutlined, CheckCircleOutlined,  LineChartOutlined, BankOutlined, FileTextOutlined,
@@ -28,7 +28,10 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null)
   const [range, setRange] = useState('Ngày')
 
-  useEffect(() => { getAdminDashboard().then(setData) }, [])
+  useEffect(() => {
+    getAdminDashboard(range).then(setData)
+      .catch((error) => message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được dashboard Admin'))
+  }, [range])
   if (!data) return <Loading />
   const { kpi, flow, tenants } = data
 
@@ -102,7 +105,7 @@ export default function AdminDashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 16 }}><LineChartOutlined /> Lưu lượng Hàng hóa Nhập - Xuất (30 Ngày Qua)</div>
-            <div className="text-muted mono">Tổng tích lũy: 42,850 CBM Nhập | 38,120 CBM Xuất</div>
+            <div className="text-muted mono">Tổng 30 ngày: {formatNumber(flow.totalInbound)} Nhập | {formatNumber(flow.totalOutbound)} Xuất</div>
           </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: 12 }}>
             <span><span style={{ color: '#0057c2' }}>●</span> Nhập kho (Inbound)</span>
@@ -140,7 +143,7 @@ export default function AdminDashboard() {
         ))}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', background: '#e5eeff', borderRadius: 8, padding: '10px 12px', marginTop: 12 }}>
-          <span><FileTextOutlined /> Tổng cước kho ước tính: <b className="mono">342.5M đ/tháng</b></span>
+          <span><FileTextOutlined /> Tổng hóa đơn tháng này: <b className="mono">{kpi.fee.total} đ</b></span>
           <Link to="/customers">Quản lý Hợp đồng & Cước Tenant →</Link>
         </div>
       </div>

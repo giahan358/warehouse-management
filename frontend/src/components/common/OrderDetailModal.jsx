@@ -1,15 +1,22 @@
-import { Button, Modal, Table, Tag } from 'antd'
-import { CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, WarningOutlined } from '@ant-design/icons'
+import { Button, Input, InputNumber, Modal, Table, Tag } from 'antd'
+import { useEffect, useState } from 'react'
+import { CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
 import StatusTag from './StatusTag'
 import { FULFILLMENT_STATUS } from '../../constants/statuses'
 
 const label = { fontSize: 11, color: '#727786', textTransform: 'uppercase' }
 
-export default function OrderDetailModal({ order, onClose, onStart, onShortage }) {
+export default function OrderDetailModal({ order, onClose, onStart, onShortage, onSaveActualQuantity, reportMode = false }) {
+  const [actualValues, setActualValues] = useState({})
+  const [notes, setNotes] = useState({})
+  useEffect(() => {
+    setActualValues(Object.fromEntries((order?.items ?? []).map((item) => [item.itemId, item.actual ?? item.qty])))
+    setNotes(Object.fromEntries((order?.items ?? []).map((item) => [item.itemId, item.note ?? ''])))
+  }, [order])
   const items = order?.items ?? []
   const enough = items.every((i) => i.avail >= i.qty)
   const totalQty = items.reduce((s, i) => s + i.qty, 0)
-  const canReport = order && ['PENDING', 'PICKING'].includes(order.status)
+  const canReport = order?.status === 'PICKING' && !reportMode
 
   const columns = [
     {
@@ -26,6 +33,20 @@ export default function OrderDetailModal({ order, onClose, onStart, onShortage }
       title: 'ĐỐI SOÁT', align: 'center',
       render: (_, r) => (r.avail >= r.qty ? <Tag color="success">Đủ</Tag> : <Tag color="error">Thiếu</Tag>),
     },
+    ...(order?.status === 'PICKING' && !reportMode ? [{
+      title: 'SL THỰC SOẠN', width: 190,
+      render: (_, r) => <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <InputNumber min={0} max={r.qty} precision={0} value={actualValues[r.itemId]}
+          onChange={(value) => setActualValues((values) => ({ ...values, [r.itemId]: value }))} />
+        <Button size="small" icon={<SaveOutlined />} disabled={actualValues[r.itemId] == null}
+          onClick={async () => {
+            try { await onSaveActualQuantity?.(r, actualValues[r.itemId], notes[r.itemId] ?? '') }
+            catch { /* parent displays the API error */ }
+          }}>Lưu</Button>
+        <Input aria-label="Ghi chú số lượng thực soạn" placeholder="Ghi chú" value={notes[r.itemId]}
+          onChange={(event) => setNotes((values) => ({ ...values, [r.itemId]: event.target.value }))} />
+      </div>,
+    }] : []),
   ]
 
   return (
@@ -36,7 +57,7 @@ export default function OrderDetailModal({ order, onClose, onStart, onShortage }
       destroyOnClose
       title={
         <span>
-          Chi tiết yêu cầu xuất kho <span className="mono">{order?.id}</span>{' '}
+          {reportMode ? 'Biên bản bàn giao' : 'Chi tiết yêu cầu xuất kho'} <span className="mono">{order?.id}</span>{' '}
           {order?.urgent && <Tag color="error">Ưu tiên SLA</Tag>}
         </span>
       }
@@ -49,7 +70,7 @@ export default function OrderDetailModal({ order, onClose, onStart, onShortage }
           </span>
           <span style={{ display: 'inline-flex', gap: 8 }}>
             <Button onClick={onClose}>Đóng</Button>
-            {order?.status === 'PENDING' && (
+            {!reportMode && order?.status === 'PENDING' && (
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={onStart}>Bắt đầu lấy hàng</Button>
             )}
           </span>
@@ -82,10 +103,10 @@ export default function OrderDetailModal({ order, onClose, onStart, onShortage }
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <b>Danh sách SKU & Đối soát tồn khả dụng trước khi xuất</b>
+            <b>{reportMode ? 'Danh sách hàng bàn giao' : 'Danh sách SKU & Đối soát tồn khả dụng trước khi xuất'}</b>
             <span className="text-muted mono">Tổng: {String(items.length).padStart(2, '0')} SKU ({String(totalQty).padStart(2, '0')} đơn vị)</span>
           </div>
-          <Table rowKey="sku" size="small" columns={columns} dataSource={items} pagination={false} scroll={{ x: 640 }} />
+          <Table rowKey={(item) => item.itemId ?? item.sku} size="small" columns={columns} dataSource={items} pagination={false} scroll={{ x: 840 }} />
         </>
       )}
     </Modal>

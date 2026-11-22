@@ -22,7 +22,10 @@ export default function InvoiceDetailDrawer({ open, invoice, onClose, onOpenVnpa
     if (!open || !invoice) return
     setLoading(true)
     setDetail(null)
-    invoiceApi.getDetail(invoice.id).then(setDetail).finally(() => setLoading(false))
+    invoiceApi.getDetail(invoice.invoiceId ?? invoice.id)
+      .then(setDetail)
+      .catch((error) => message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được chi tiết hóa đơn'))
+      .finally(() => setLoading(false))
   }, [open, invoice])
 
   const st = invoice ? INVOICE_STATUS[invoice.status] : null

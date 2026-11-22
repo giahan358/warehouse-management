@@ -19,6 +19,7 @@ import OutboundListPage from '../pages/outbound/OutboundListPage'
 import StaffOutboundPage from '../pages/outbound/StaffOutboundPage'
 import InvoiceListPage from '../pages/invoices/InvoiceListPage'
 import UserListPage from '../pages/users/UserListPage'
+import EmailHistoryPage from '../pages/emails/EmailHistoryPage'
 
 // Trang chủ theo vai trò
 function Home() {
@@ -44,6 +45,7 @@ export default function AppRoutes() {
             <Route path="customers" element={<CustomerListPage />} />
             <Route path="invoices" element={<InvoiceListPage />} />
             <Route path="users" element={<UserListPage />} />
+            <Route path="emails" element={<EmailHistoryPage />} />
           </Route>
 
           <Route element={<RoleRoute allow={[ROLES.STAFF]} />}>
