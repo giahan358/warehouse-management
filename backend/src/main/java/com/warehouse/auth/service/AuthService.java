@@ -4,11 +4,14 @@ import com.warehouse.auth.dto.AuthUserResponse;
 import com.warehouse.auth.dto.ChangePasswordRequest;
 import com.warehouse.auth.dto.LoginRequest;
 import com.warehouse.auth.dto.RegisterRequest;
+import com.warehouse.auth.dto.ResendEmailVerificationRequest;
 import com.warehouse.auth.dto.SetupPasswordRequest;
+import com.warehouse.auth.dto.VerifyEmailRequest;
 import com.warehouse.common.enums.LoginMethod;
 import com.warehouse.common.enums.UserRole;
 import com.warehouse.common.enums.UserStatus;
 import com.warehouse.common.exception.BusinessException;
+import com.warehouse.common.util.DatabaseConstraintUtils;
 import com.warehouse.customer.model.Customer;
 import com.warehouse.customer.repository.CustomerRepository;
 import com.warehouse.user.model.User;
@@ -17,7 +20,9 @@ import com.warehouse.user.service.AccountInvitationService;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,21 +31,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final long EMAIL_VERIFICATION_TTL_HOURS = 24;
+    private static final long EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60;
 
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final AccountInvitationService accountInvitationService;
+    private final EmailVerificationService emailVerificationService;
 
     public AuthService(
             UserRepository userRepository,
             CustomerRepository customerRepository,
             PasswordEncoder passwordEncoder,
-            AccountInvitationService accountInvitationService) {
+            AccountInvitationService accountInvitationService,
+            EmailVerificationService emailVerificationService) {
         this.userRepository = userRepository;
         this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.accountInvitationService = accountInvitationService;
+        this.emailVerificationService = emailVerificationService;
     }
 
     @Transactional
@@ -48,7 +58,7 @@ public class AuthService {
         String email = normalizeEmail(request.email());
         validatePasswordLength(request.password());
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new BusinessException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email đã được sử dụng");
+            throw emailAlreadyExists();
         }
 
         User user = new User();
@@ -59,8 +69,23 @@ public class AuthService {
         user.setLoginMethod(LoginMethod.EMAIL);
         user.setRole(UserRole.CUSTOMER);
         user.setStatus(UserStatus.ACTIVE);
-        user.setCreatedAt(LocalDateTime.now(BUSINESS_ZONE));
-        return response(userRepository.save(user), null);
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        user.setCreatedAt(now);
+        user.setEmailVerified(false);
+        String verificationToken = emailVerificationService.createToken();
+        user.setEmailVerificationTokenHash(emailVerificationService.hashToken(verificationToken));
+        user.setEmailVerificationExpiresAt(now.plusHours(EMAIL_VERIFICATION_TTL_HOURS));
+        user.setEmailVerificationSentAt(now);
+        try {
+            User saved = userRepository.saveAndFlush(user);
+            emailVerificationService.sendVerificationEmail(saved, verificationToken);
+            return response(saved, null);
+        } catch (DataIntegrityViolationException exception) {
+            if (DatabaseConstraintUtils.isUniqueConstraintViolation(exception, "email")) {
+                throw emailAlreadyExists();
+            }
+            throw exception;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -73,7 +98,50 @@ public class AuthService {
                 || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw invalidCredentials();
         }
+        if (!user.isEmailVerified()) {
+            throw new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "EMAIL_NOT_VERIFIED",
+                    "Hãy xác minh địa chỉ email trước khi đăng nhập");
+        }
         return response(user, findCustomer(user.getId()));
+    }
+
+    @Transactional
+    public void verifyEmail(VerifyEmailRequest request) {
+        String tokenHash = emailVerificationService.hashToken(request.token());
+        User user = userRepository.findLockedByEmailVerificationTokenHash(tokenHash)
+                .orElseThrow(this::invalidOrExpiredVerificationToken);
+        LocalDateTime expiresAt = user.getEmailVerificationExpiresAt();
+        if (expiresAt == null || !expiresAt.isAfter(LocalDateTime.now(BUSINESS_ZONE))) {
+            throw invalidOrExpiredVerificationToken();
+        }
+        user.setEmailVerified(true);
+        user.setEmailVerificationTokenHash(null);
+        user.setEmailVerificationExpiresAt(null);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void resendEmailVerification(ResendEmailVerificationRequest request) {
+        User user = userRepository.lockByEmailForVerification(normalizeEmail(request.email())).orElse(null);
+        if (user == null || user.isEmailVerified() || user.getStatus() == UserStatus.LOCKED) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        LocalDateTime lastSentAt = user.getEmailVerificationSentAt();
+        if (lastSentAt != null
+                && lastSentAt.isAfter(now.minus(EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS, ChronoUnit.SECONDS))) {
+            return;
+        }
+
+        String verificationToken = emailVerificationService.createToken();
+        user.setEmailVerificationTokenHash(emailVerificationService.hashToken(verificationToken));
+        user.setEmailVerificationExpiresAt(now.plusHours(EMAIL_VERIFICATION_TTL_HOURS));
+        user.setEmailVerificationSentAt(now);
+        User saved = userRepository.saveAndFlush(user);
+        emailVerificationService.sendVerificationEmail(saved, verificationToken);
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +215,17 @@ public class AuthService {
 
     private BusinessException invalidCredentials() {
         return new BusinessException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Email hoặc mật khẩu không đúng");
+    }
+
+    private BusinessException emailAlreadyExists() {
+        return new BusinessException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email đã được sử dụng");
+    }
+
+    private BusinessException invalidOrExpiredVerificationToken() {
+        return new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_OR_EXPIRED_VERIFICATION_TOKEN",
+                "Liên kết xác minh email không hợp lệ hoặc đã hết hạn");
     }
 
     private String normalizeEmail(String email) {

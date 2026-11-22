@@ -1,14 +1,20 @@
 package com.warehouse.product.repository;
 
 import com.warehouse.product.model.Product;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id")
+    Optional<Product> findLockedById(@Param("id") Long id);
+
     java.util.List<Product> findAllByCustomerIdAndBarcodeIgnoreCase(Long customerId, String barcode);
 
     boolean existsByCustomerIdAndSkuIgnoreCase(Long customerId, String sku);

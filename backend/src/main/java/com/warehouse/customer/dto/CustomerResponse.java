@@ -38,11 +38,11 @@ public record CustomerResponse(
         BigDecimal capacity = zeroIfNull(customer.getCapacityM3());
         BigDecimal used = zeroIfNull(customer.getUsedM3());
         BigDecimal reserved = zeroIfNull(customer.getReservedInboundM3());
-        BigDecimal remaining = capacity.subtract(used).subtract(reserved).max(BigDecimal.ZERO);
+        BigDecimal remaining = capacity.subtract(used).subtract(reserved);
         BigDecimal percent = capacity.signum() == 0
                 ? BigDecimal.ZERO
                 : used.multiply(BigDecimal.valueOf(100))
-                        .divide(capacity, 2, java.math.RoundingMode.HALF_UP);
+                        .divide(capacity, 1, java.math.RoundingMode.HALF_UP);
 
         return new CustomerResponse(
                 customer.getId(),

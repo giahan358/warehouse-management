@@ -46,6 +46,10 @@ CREATE TABLE `users` (
   `role` varchar(30) NOT NULL COMMENT 'ADMIN, WAREHOUSE_STAFF, CUSTOMER',
   `status` varchar(20) NOT NULL COMMENT 'ACTIVE, LOCKED',
   `lock_reason` varchar(255) COMMENT 'Lý do khóa (nợ cước quá hạn...)',
+  `email_verified` boolean NOT NULL DEFAULT TRUE,
+  `email_verification_token_hash` varchar(64) UNIQUE,
+  `email_verification_expires_at` datetime,
+  `email_verification_sent_at` datetime,
   `password_setup_token_hash` varchar(64),
   `password_setup_expires_at` datetime,
   `created_at` datetime NOT NULL

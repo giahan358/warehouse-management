@@ -27,6 +27,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -100,9 +101,17 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public CustomerResponse update(Long id, UpdateCustomerRequest request) {
-        Customer customer = customerRepository.findById(id).orElseThrow(() -> customerNotFound(id));
+        Customer customer = customerRepository.findLockedById(id).orElseThrow(() -> customerNotFound(id));
+        BigDecimal usedVolume = customerRepository.sumStoredVolume(id);
+        BigDecimal reservedVolume = customerRepository.sumReservedInboundVolume(id);
+        if (usedVolume.add(reservedVolume).compareTo(request.capacityM3()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "CAPACITY_EXCEEDED",
+                    "Không thể giảm dung tích xuống thấp hơn lượng hàng đã lưu trữ và đặt chỗ");
+        }
         applyCommonFields(
                 customer,
                 request.businessName(),

@@ -229,6 +229,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST, "INVALID_QUANTITY", "quantityActual phải từ 0 đến quantityRequested");
         }
+        lockCustomer(order.getCustomerId());
         Inventory inventory = lockInventory(order.getCustomerId(), item.getProductId());
         BigDecimal previousActual = item.getQuantityActual() == null ? ZERO : item.getQuantityActual();
         BigDecimal delta = request.quantityActual().subtract(previousActual);
@@ -304,6 +305,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         OutboundOrder order = lockOrder(id);
         requireStatus(order, OutboundStatus.IN_DELIVERY);
         List<OutboundOrderItem> items = itemRepository.findByOrderIdOrderById(id);
+        lockCustomer(order.getCustomerId());
         for (OutboundOrderItem item : items) {
             BigDecimal returnedQuantity = item.getQuantityActual() == null ? item.getQuantityRequested() : item.getQuantityActual();
             if (returnedQuantity.signum() > 0) {
@@ -406,6 +408,11 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "Sản phẩm chưa có tồn kho");
         }
         return rows.getFirst();
+    }
+
+    private Customer lockCustomer(Long customerId) {
+        return customerRepository.findLockedById(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", customerId));
     }
 
     private Product findOwnedActiveProduct(Long productId, Long customerId) {
