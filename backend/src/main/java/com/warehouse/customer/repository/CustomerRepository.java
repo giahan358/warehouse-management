@@ -38,6 +38,24 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             """, nativeQuery = true)
     BigDecimal sumReservedInboundVolume(@Param("customerId") Long customerId);
 
+    @Query(value = """
+            select coalesce(sum(i.quantity), 0)
+            from inventory i
+            where i.customer_id = :customerId and i.product_id = :productId
+            """, nativeQuery = true)
+    BigDecimal sumStoredQuantityByProduct(
+            @Param("customerId") Long customerId, @Param("productId") Long productId);
+
+    @Query(value = """
+            select coalesce(sum(ri.expected_quantity), 0)
+            from inbound_receipts r
+            join inbound_receipt_items ri on ri.receipt_id = r.id
+            where r.customer_id = :customerId and r.status in ('SCHEDULED', 'RECEIVING')
+              and ri.product_id = :productId
+            """, nativeQuery = true)
+    BigDecimal sumReservedQuantityByProduct(
+            @Param("customerId") Long customerId, @Param("productId") Long productId);
+
     @Query(
             value = """
                     SELECT c.id AS id,

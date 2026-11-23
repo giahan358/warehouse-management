@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { Button, Input, Select, Space, Table, Tooltip } from 'antd'
+import { Button, Input, Select, Space, Table, Tooltip, message } from 'antd'
 import {
   PlusCircleOutlined, SearchOutlined, ReloadOutlined, EyeOutlined, SendOutlined,
   CloseOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import invoiceApi from '../../api/invoiceApi'
-import { ipnLogsMock } from '../../mocks/data'
+import paymentApi from '../../api/paymentApi'
+import { USE_MOCK } from '../../api/axiosClient'
 import PageHeader from '../../components/common/PageHeader'
 import InvoiceCreateDrawer from '../../components/forms/InvoiceCreateDrawer'
 import InvoiceDetailDrawer from '../../components/forms/InvoiceDetailDrawer'
 import VnpayModal from '../../components/forms/VnpayModal'
+import ConfirmModal from '../../components/common/ConfirmModal'
 import StatusTag from '../../components/common/StatusTag'
 import { INVOICE_STATUS } from '../../constants/statuses'
 import { formatCurrency } from '../../utils/formatCurrency'
@@ -22,7 +24,13 @@ export default function InvoiceListPage() {
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [ipnLogs, setIpnLogs] = useState(ipnLogsMock)
+  const [ipnLogs, setIpnLogs] = useState([])
+  const [keyword, setKeyword] = useState('')
+  const [customerId, setCustomerId] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [month, setMonth] = useState('all')
+  const [cancelTarget, setCancelTarget] = useState(null)
+  const [pendingPayment, setPendingPayment] = useState(null)
   const [createOpen, setCreateOpen] = useState(!!createFor)
   const [detail, setDetail] = useState({ open: false, invoice: null })
   const [vnpay, setVnpay] = useState({ open: false, invoice: null })
@@ -30,8 +38,24 @@ export default function InvoiceListPage() {
   // async/await — setState chạy sau await, không phải sync
   const load = useCallback(async () => {
     try {
-      const d = await invoiceApi.getAll()
+      const [d, payments] = await Promise.all([
+        invoiceApi.getAll({ page: 0, size: 100 }),
+        paymentApi.getPayments({ page: 0, size: 100, method: 'VNPAY' }),
+      ])
       setRows(d)
+      if (!USE_MOCK) {
+        setPendingPayment(payments.items.find((payment) => payment.status === 'PENDING' && (payment.vnpTxnRef || payment.transactionRef)) ?? null)
+        setIpnLogs(payments.items.map((payment) => ({
+        time: payment.paidAt ? dayjs(payment.paidAt).format('DD/MM HH:mm:ss') : '—',
+        txn: payment.vnpTxnRef ?? payment.transactionRef ?? '—',
+        code: payment.vnpResponseCode ?? payment.status,
+        label: payment.vnpResponseCode ?? payment.status,
+        amount: Number(payment.amount ?? 0),
+        paymentStatus: payment.status,
+        })))
+      }
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được hóa đơn và giao dịch')
     } finally {
       setLoading(false)
     }
@@ -39,12 +63,59 @@ export default function InvoiceListPage() {
 
   useEffect(() => { load() }, [load])
 
-  const openDetail = (invoice) => setDetail({ open: true, invoice })
-  const openVnpay = (invoice) => setVnpay({ open: true, invoice })
+  const invoiceMonth = (row) => row.periodStart?.slice(0, 7) ?? row.id?.match(/^INV-(\d{4})(\d{2})/)?.slice(1).join('-')
+  const customers = [...new Map(rows.map((row) => [String(row.customerId ?? row.customer), row.customer]).filter(([value, label]) => value && label)).entries()]
+  const months = [...new Set(rows.map(invoiceMonth).filter(Boolean))].sort().reverse()
+  const filteredRows = rows.filter((row) =>
+    (customerId === 'all' || String(row.customerId ?? row.customer) === customerId) &&
+    (statusFilter === 'all' || row.status === statusFilter) &&
+    (month === 'all' || invoiceMonth(row) === month) &&
+    `${row.id} ${row.customer} ${row.tax}`.toLowerCase().includes(keyword.trim().toLowerCase()))
 
-  const handleCreated = (row, method) => {
+  const openDetail = (invoice) => setDetail({ open: true, invoice })
+  const openVnpay = (invoice) => {
+    if (!USE_MOCK) {
+      message.info('Khách hàng khởi tạo giao dịch VNPay từ cổng khách hàng; Admin theo dõi giao dịch tại đây.')
+      return
+    }
+    setVnpay({ open: true, invoice })
+  }
+
+  const handleCreated = (row) => {
     setRows((rs) => [row, ...rs])
-    if (method === 'VNPAY') openVnpay(row) 
+  }
+
+  const cancelInvoice = async () => {
+    if (!cancelTarget) return
+    try {
+      await invoiceApi.cancel(cancelTarget.invoiceId ?? cancelTarget.id)
+      message.success(`Đã hủy hóa đơn ${cancelTarget.id}`)
+      setCancelTarget(null)
+      await load()
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không hủy được hóa đơn')
+    }
+  }
+
+  const sendInvoiceEmail = async (invoice) => {
+    try {
+      await invoiceApi.sendEmail(invoice.invoiceId ?? invoice.id)
+      message.success(`Đã gửi hóa đơn ${invoice.id} qua email khách hàng`)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không gửi được email hóa đơn')
+    }
+  }
+
+  const testIpn = async () => {
+    if (USE_MOCK) return message.info('Đang dùng dữ liệu mô phỏng.')
+    if (!pendingPayment) return message.warning('Chưa có giao dịch VNPay đang chờ để gửi IPN giả lập.')
+    try {
+      await paymentApi.simulateIpn(pendingPayment.vnpTxnRef ?? pendingPayment.transactionRef, '00', pendingPayment.amount)
+      message.success('Đã gửi IPN giả lập thành công')
+      await load()
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không gửi được IPN giả lập')
+    }
   }
 
   // Kết quả webhook IPN giả lập: '00' => PAID, '24' => giữ nguyên trạng thái
@@ -72,10 +143,10 @@ export default function InvoiceListPage() {
       render: (_, r) => (
         <Space>
           <Tooltip title="Xem chi tiết"><Button type="text" onClick={() => openDetail(r)} icon={<EyeOutlined style={{ color: '#0057c2' }} />} /></Tooltip>
-          {r.status !== 'PAID' && (
+          {r.status !== 'PAID' && r.status !== 'CANCELLED' && (
             <>
-              <Tooltip title="Gửi link thanh toán VNPay"><Button type="text" onClick={() => openVnpay(r)} icon={<SendOutlined style={{ color: '#0057c2' }} />} /></Tooltip>
-              <Tooltip title="Hủy hóa đơn"><Button type="text" icon={<CloseOutlined style={{ color: '#ba1a1a' }} />} /></Tooltip>
+              <Tooltip title="Gửi hóa đơn qua email"><Button type="text" onClick={() => sendInvoiceEmail(r)} icon={<SendOutlined style={{ color: '#0057c2' }} />} /></Tooltip>
+              <Tooltip title="Hủy hóa đơn"><Button type="text" onClick={() => setCancelTarget(r)} icon={<CloseOutlined style={{ color: '#ba1a1a' }} />} /></Tooltip>
             </>
           )}
         </Space>
@@ -93,22 +164,22 @@ export default function InvoiceListPage() {
 
       <div className="card-flat" style={{ marginBottom: 16 }}>
         <Space wrap>
-          <Input style={{ width: 340 }} prefix={<SearchOutlined />} placeholder="Tìm theo Mã hóa đơn (INV-...), MST khách hàng..." />
-          <Select style={{ width: 200 }} defaultValue="all" options={[{ value: 'all', label: 'Tất cả Khách Hàng B2B' }]} />
-          <Select style={{ width: 180 }} defaultValue="all"
+          <Input style={{ width: 340 }} value={keyword} onChange={(event) => setKeyword(event.target.value)} allowClear prefix={<SearchOutlined />} placeholder="Tìm theo Mã hóa đơn (INV-...), MST khách hàng..." />
+          <Select style={{ width: 200 }} value={customerId} onChange={setCustomerId} options={[{ value: 'all', label: 'Tất cả Khách Hàng B2B' }, ...customers.map(([value, label]) => ({ value, label }))]} />
+          <Select style={{ width: 180 }} value={statusFilter} onChange={setStatusFilter}
             options={[{ value: 'all', label: 'Tất cả Trạng Thái' }, ...Object.entries(INVOICE_STATUS).map(([value, s]) => ({ value, label: s.label }))]} />
-          <Select style={{ width: 160 }} defaultValue="T10" options={[{ value: 'T10', label: 'Kỳ T10/2024' }, { value: 'T9', label: 'Kỳ T09/2024' }]} />
-          <Button icon={<ReloadOutlined />} />
+          <Select style={{ width: 160 }} value={month} onChange={setMonth} options={[{ value: 'all', label: 'Tất cả kỳ' }, ...months.map((value) => ({ value, label: `Kỳ ${dayjs(`${value}-01`).format('MM/YYYY')}` }))]} />
+          <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(''); setCustomerId('all'); setStatusFilter('all'); setMonth('all') }} />
         </Space>
       </div>
 
       <div className="card-flat" style={{ padding: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: 16 }}>
-          <b>Danh Sách Hóa Đơn Dịch Vụ Kho Vận <span className="chip">152 bản ghi</span></b>
+          <b>Danh Sách Hóa Đơn Dịch Vụ Kho Vận <span className="chip">{filteredRows.length} bản ghi</span></b>
           <span className="text-muted">Tự động đồng bộ IPN: 30s/lần</span>
         </div>
-        <Table rowKey="id" loading={loading} columns={columns} dataSource={rows}
-          pagination={{ total: 152, pageSize: 10, showSizeChanger: true, showTotal: (t) => `Hiển thị 1 - 4 của ${t} hóa đơn phát sinh`, style: { padding: '0 16px' } }} />
+        <Table rowKey="id" loading={loading} columns={columns} dataSource={filteredRows}
+          pagination={{ total: filteredRows.length, pageSize: 10, showSizeChanger: true, showTotal: (t) => `Tổng cộng ${t} hóa đơn phát sinh`, style: { padding: '0 16px' } }} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, marginTop: 16 }}>
@@ -140,7 +211,7 @@ export default function InvoiceListPage() {
           <div className="text-muted" style={{ display: 'flex', justifyContent: 'space-between', margin: '12px 0 8px' }}>
             <span>Tỷ lệ xác thực checksum</span><b className="mono" style={{ color: '#006767' }}>100% (An toàn)</b>
           </div>
-          <Button block icon={<ThunderboltOutlined />}>Gửi Test Ping Giả Lập IPN (Mock Post)</Button>
+          <Button block icon={<ThunderboltOutlined />} onClick={testIpn}>Gửi Test Ping Giả Lập IPN (Mock Post)</Button>
         </div>
       </div>
 
@@ -151,6 +222,9 @@ export default function InvoiceListPage() {
         onOpenVnpay={(inv) => { setDetail((d) => ({ ...d, open: false })); openVnpay(inv) }} />
       <VnpayModal open={vnpay.open} invoice={vnpay.invoice}
         onClose={() => setVnpay((v) => ({ ...v, open: false }))} onResult={handleIpnResult} />
+      <ConfirmModal open={!!cancelTarget} danger title="Hủy hóa đơn"
+        content={`Bạn có chắc muốn hủy hóa đơn ${cancelTarget?.id}? BE chỉ cho phép hủy hóa đơn chưa thanh toán.`}
+        onOk={cancelInvoice} onCancel={() => setCancelTarget(null)} />
     </div>
   )
 }

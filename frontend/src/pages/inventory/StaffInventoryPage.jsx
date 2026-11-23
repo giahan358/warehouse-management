@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Input, Select, Table } from 'antd'
-import { FilterOutlined, InboxOutlined, ReloadOutlined, SafetyCertificateOutlined, SearchOutlined, UndoOutlined } from '@ant-design/icons'
+import { Button, Input, Select, Table, message } from 'antd'
+import { FilterOutlined, InboxOutlined, ReloadOutlined, SearchOutlined, UndoOutlined } from '@ant-design/icons'
 import inventoryApi from '../../api/inventoryApi'
 import PageHeader from '../../components/common/PageHeader'
 import StatusTag from '../../components/common/StatusTag'
-import InfoBanner from '../../components/common/InfoBanner'
 import { STAFF_STOCK_STATUS } from '../../constants/statuses'
 import { getAvailable, getStockStatus } from '../../utils/stockStatus'
 import { formatNumber } from '../../utils/formatCurrency'
@@ -13,6 +12,7 @@ import { formatDateTime } from '../../utils/formatDate'
 // Nhân viên kho chỉ XEM tồn kho; tồn kho chỉ đổi qua xác nhận nhập kho (UC09) / xuất kho (UC11)
 export default function StaffInventoryPage() {
   const [rows, setRows] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState(null)
   const [owner, setOwner] = useState('all')
@@ -21,9 +21,22 @@ export default function StaffInventoryPage() {
 
   const load = () => {
     setLoading(true)
-    inventoryApi.getStaffInventory().then((d) => {
+    Promise.allSettled([
+      inventoryApi.getStaffInventory({ page: 0, size: 100 }),
+      inventoryApi.getSummary(),
+    ]).then(([inventoryResult, summaryResult]) => {
+      if (inventoryResult.status === 'rejected') throw inventoryResult.reason
+      const d = inventoryResult.value
       setRows(d)
+      if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value)
+      else {
+        setSummary(null)
+        message.error(summaryResult.reason?.response?.data?.error?.message ?? summaryResult.reason?.response?.data?.message ?? 'Không tải được thống kê tồn kho')
+      }
       setUpdatedAt(new Date())
+      setLoading(false)
+    }).catch((error) => {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được dữ liệu tồn kho')
       setLoading(false)
     })
   }
@@ -68,7 +81,7 @@ export default function StaffInventoryPage() {
       title: 'TỒN KHẢ DỤNG (AVAILABLE)', align: 'right',
       render: (_, r) => <b style={{ color: getStockStatus(r) === 'OUT' ? '#ba1a1a' : '#0057c2' }}>{formatNumber(getAvailable(r))}</b>,
     },
-    { title: 'THỂ TÍCH (M³)', dataIndex: 'volume', align: 'right', render: (v) => v.toFixed(1) },
+    { title: 'THỂ TÍCH (M³)', dataIndex: 'volume', align: 'right', render: (v) => v == null ? '—' : Number(v).toFixed(1) },
     { title: 'TÌNH TRẠNG', align: 'center', render: (_, r) => <StatusTag map={STAFF_STOCK_STATUS} status={getStockStatus(r)} /> },
   ]
 
@@ -80,11 +93,6 @@ export default function StaffInventoryPage() {
         tag="WMS-INV-QUERY"
         extra={<Button icon={<ReloadOutlined />} onClick={load}>Làm mới dữ liệu tồn kho</Button>}
       />
-
-      <InfoBanner accent icon={<SafetyCertificateOutlined />} title="Nguyên tắc Bất biến Kho hàng (WMS Data Integrity Ruleset)" badge="QUY CHẾ KIỂM SOÁT CẤP 1">
-        Tồn kho chỉ được cập nhật tự động khi Xác nhận nhập kho (UC09) hoặc Chuẩn bị xuất kho (UC11). Nhân viên kho không có quyền sửa trực tiếp
-        tồn kho nhằm đảm bảo tính toàn vẹn kiểm toán tài chính, bảo mật số liệu và trách nhiệm pháp lý với khách hàng thuê kho B2B.
-      </InfoBanner>
 
       <div className="card-flat">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -106,6 +114,20 @@ export default function StaffInventoryPage() {
               options={[{ value: 'all', label: 'Tất cả trạng thái' }, ...Object.entries(STAFF_STOCK_STATUS).map(([value, s]) => ({ value, label: s.label }))]} />
           </div>
         </div>
+      </div>
+
+      <div className="card-flat" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+        {[
+          ['Tổng mặt hàng tồn', summary?.total],
+          ['Tồn an toàn', summary?.safe],
+          ['Tồn thấp', summary?.low],
+          ['Hết hàng', summary?.outOfStock],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <div className="text-muted">{label}</div>
+            <b className="mono" style={{ fontSize: 20 }}>{value == null ? '—' : formatNumber(value)}</b>
+          </div>
+        ))}
       </div>
 
       <div className="card-flat">

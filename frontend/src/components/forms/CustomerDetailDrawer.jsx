@@ -22,8 +22,8 @@ const Legend = ({ color, children }) => <span className="legend"><i style={{ bac
 
 function ContractTab({ d }) {
   const { capacity: cap, contract: c } = d
-  const pct = ((cap.stored + cap.reserved) / cap.total) * 100
-  const remain = dayjs(c.expiresAt).diff(dayjs(), 'day')
+  const pct = cap.total ? ((cap.stored + cap.reserved) / cap.total) * 100 : 0
+  const remain = c.expiresAt ? dayjs(c.expiresAt).diff(dayjs(), 'day') : null
   return (
     <>
       <PopupSection title="Tình Trạng Dung Lượng Lưu Trữ" extra={<b className="mono">{formatNumber(cap.stored + cap.reserved)} / {formatNumber(cap.total)} m³ ({pct.toFixed(1)}%)</b>}>
@@ -43,10 +43,10 @@ function ContractTab({ d }) {
         <Row k="Loại hợp đồng:" v={c.type} />
         <Row k="Ngày ký kết:" v={formatDate(c.signedAt)} />
         <Row k="Ngày hết hạn hiệu lực:" v={
-          <span style={{ color: remain < 0 ? '#ba1a1a' : undefined }}>
-            {formatDate(c.expiresAt)} ({remain < 0 ? 'Đã hết hạn' : `Còn ${remain} ngày`})
+          <span style={{ color: remain != null && remain < 0 ? '#ba1a1a' : undefined }}>
+            {formatDate(c.expiresAt)}{remain == null ? '' : ` (${remain < 0 ? 'Đã hết hạn' : `Còn ${remain} ngày`})`}
           </span>} />
-        <Row k="Đơn giá thuê cơ bản:" v={`${formatCurrency(c.unitPrice)} / m³ / tháng`} />
+        <Row k="Đơn giá thuê cơ bản:" v={c.unitPrice == null ? '—' : `${formatCurrency(c.unitPrice)} / m³ / tháng`} />
         <Row k="Kỳ hạn sao kê phí:" v={c.cycle} />
       </PopupSection>
 
@@ -122,7 +122,10 @@ export default function CustomerDetailDrawer({ open, customer, onClose, onCreate
     setTab('contract')
     setLoading(true)
     setDetail(null)
-    customerApi.getDetail(customer.id).then(setDetail).finally(() => setLoading(false))
+    customerApi.getDetail(customer.id)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false))
   }, [open, customer])
 
   const items = detail && [

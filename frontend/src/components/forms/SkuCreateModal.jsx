@@ -5,6 +5,9 @@ import {
   ReloadOutlined, ShopOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import inventoryApi from '../../api/inventoryApi'
+import customerApi from '../../api/customerApi'
+import metaApi from '../../api/metaApi'
+import { USE_MOCK } from '../../api/axiosClient'
 import PopupHeader, { modalStyles } from '../common/PopupHeader'
 import PopupSection from '../common/PopupSection'
 import { skuCategoryOptions, skuTenantOptions, storageZoneOptions, uomOptions } from '../../mocks/popupData'
@@ -44,8 +47,24 @@ function ZoneCards({ value, onChange }) {
 export default function SkuCreateModal({ open, onClose, onCreated }) {
   const [form] = Form.useForm()
   const [submitting, setSubmitting] = useState(false)
+  const [tenantOptions, setTenantOptions] = useState(skuTenantOptions)
+  const [categoryOptions, setCategoryOptions] = useState(skuCategoryOptions)
+  const [unitOptions, setUnitOptions] = useState(uomOptions)
 
-  useEffect(() => { if (open) form.setFieldsValue({ sku: genSku() }) }, [open, form])
+  useEffect(() => {
+    if (!open) return
+    form.setFieldsValue({ sku: genSku() })
+    if (USE_MOCK) return
+    Promise.all([customerApi.getAll({ page: 0, size: 100 }), metaApi.getOptions()])
+      .then(([customers, options]) => {
+        setTenantOptions(customers.map((customer) => ({ value: customer.id, label: `${customer.name} (${customer.code})` })))
+        const categoryLabels = new Map(skuCategoryOptions.map((option) => [option.value, option.label]))
+        setCategoryOptions((options?.categories ?? []).map((value) => ({ value, label: categoryLabels.get(value) ?? value })))
+        const unitLabels = new Map(uomOptions.map((option) => [option.value, option.label]))
+        setUnitOptions((options?.units ?? []).map((value) => ({ value, label: unitLabels.get(value) ?? value })))
+      })
+      .catch((error) => message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được danh mục chủ hàng và sản phẩm'))
+  }, [open, form])
 
   const dimensions = Form.useWatch('dimensions', form)
   const uom = Form.useWatch('uom', form)
@@ -57,7 +76,8 @@ export default function SkuCreateModal({ open, onClose, onCreated }) {
     setSubmitting(true)
     try {
       const row = await inventoryApi.createSku({
-        ...v, cbm, categoryTag: skuCategoryOptions.find((c) => c.value === v.category)?.value,
+        ...v, cbm, tenantName: tenantOptions.find((customer) => customer.value === v.tenantId)?.label,
+        categoryTag: categoryOptions.find((c) => c.value === v.category)?.value,
       })
       message.success(`Đã đăng ký SKU ${row.sku}`)
       onCreated?.(row)
@@ -88,10 +108,10 @@ export default function SkuCreateModal({ open, onClose, onCreated }) {
         <PopupSection icon={<ShopOutlined />} title="1. THÔNG TIN CƠ BẢN & CHỦ HÀNG (TENANT OWNER)">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
             <Form.Item name="tenantId" label="Chủ Hàng / Doanh Nghiệp B2B" rules={required('Chọn chủ hàng')}>
-              <Select placeholder="Chọn doanh nghiệp B2B" options={skuTenantOptions} />
+              <Select placeholder="Chọn doanh nghiệp B2B" options={tenantOptions} />
             </Form.Item>
             <Form.Item name="category" label="Ngành Hàng / Phân Loại (Category)" rules={required('Chọn ngành hàng')}>
-              <Select placeholder="Chọn ngành hàng" options={skuCategoryOptions} />
+              <Select placeholder="Chọn ngành hàng" options={categoryOptions} />
             </Form.Item>
             <Form.Item label="Mã SKU Độc Bản (System / Custom)" required style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -113,7 +133,7 @@ export default function SkuCreateModal({ open, onClose, onCreated }) {
         <PopupSection icon={<ColumnHeightOutlined />} title="2. QUY CÁCH LƯU KHO & KÍCH THƯỚC (STORAGE SPECS)">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', columnGap: 16 }}>
             <Form.Item name="uom" label="Đơn vị tính cơ bản (UoM)" rules={required('Chọn ĐVT')}>
-              <Select options={uomOptions} />
+              <Select options={unitOptions} />
             </Form.Item>
             <Form.Item name="dimensions" label="Kích thước D x R x C (cm)"
               rules={[...required('Nhập kích thước'), { validator: (_, v) => (!v || toCbm(v) ? Promise.resolve() : Promise.reject(new Error('Dạng 12 x 8 x 16'))) }]}>

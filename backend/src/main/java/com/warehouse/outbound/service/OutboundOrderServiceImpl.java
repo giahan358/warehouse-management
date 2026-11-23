@@ -142,6 +142,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         Customer customer = ownCustomer(email);
         ensureNoOverdueDebt(customer.getId());
         validateUniqueProducts(request.items());
+        ensureSupportedCarrier(request.carrier());
         BigDecimal codAmount = request.codAmount() == null ? ZERO : request.codAmount();
         if (codAmount.signum() < 0 || (request.paymentMethod() == PaymentMethod.COD && codAmount.signum() <= 0)
                 || (request.paymentMethod() != PaymentMethod.COD && codAmount.signum() != 0)) {
@@ -228,6 +229,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST, "INVALID_QUANTITY", "quantityActual phải từ 0 đến quantityRequested");
         }
+        lockCustomer(order.getCustomerId());
         Inventory inventory = lockInventory(order.getCustomerId(), item.getProductId());
         BigDecimal previousActual = item.getQuantityActual() == null ? ZERO : item.getQuantityActual();
         BigDecimal delta = request.quantityActual().subtract(previousActual);
@@ -261,6 +263,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Override
     @Transactional
     public OutboundOrderDetailResponse updateTracking(Long id, UpdateTrackingRequest request) {
+        ensureSupportedCarrier(request.carrier());
         OutboundOrder order = lockOrder(id);
         if (order.getStatus() != OutboundStatus.PACKED && order.getStatus() != OutboundStatus.IN_DELIVERY) {
             throw invalidStatus();
@@ -302,6 +305,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         OutboundOrder order = lockOrder(id);
         requireStatus(order, OutboundStatus.IN_DELIVERY);
         List<OutboundOrderItem> items = itemRepository.findByOrderIdOrderById(id);
+        lockCustomer(order.getCustomerId());
         for (OutboundOrderItem item : items) {
             BigDecimal returnedQuantity = item.getQuantityActual() == null ? item.getQuantityRequested() : item.getQuantityActual();
             if (returnedQuantity.signum() > 0) {
@@ -385,6 +389,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Đơn xuất", id));
     }
 
+    private void ensureSupportedCarrier(Carrier carrier) {
+        if (carrier == Carrier.GHTK) throw badRequest("GHTK không còn là đơn vị vận chuyển được hỗ trợ");
+    }
+
     private OutboundOrder lockOrder(Long id) {
         return orderRepository.findLockedById(id).orElseThrow(() -> new ResourceNotFoundException("Đơn xuất", id));
     }
@@ -400,6 +408,11 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "Sản phẩm chưa có tồn kho");
         }
         return rows.getFirst();
+    }
+
+    private Customer lockCustomer(Long customerId) {
+        return customerRepository.findLockedById(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Khách hàng", customerId));
     }
 
     private Product findOwnedActiveProduct(Long productId, Long customerId) {

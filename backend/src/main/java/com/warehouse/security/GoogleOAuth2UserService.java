@@ -53,6 +53,7 @@ public class GoogleOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
             newUser.setLoginMethod(LoginMethod.GOOGLE);
             newUser.setRole(UserRole.CUSTOMER);
             newUser.setStatus(UserStatus.ACTIVE);
+            newUser.setEmailVerified(true);
             newUser.setCreatedAt(LocalDateTime.now(BUSINESS_ZONE));
             return userRepository.save(newUser);
         });
@@ -62,8 +63,11 @@ public class GoogleOAuth2UserService implements OAuth2UserService<OAuth2UserRequ
         }
         if (user.getGoogleId() == null) {
             user.setGoogleId(googleId);
-            userRepository.save(user);
         }
+        user.setEmailVerified(true);
+        user.setEmailVerificationTokenHash(null);
+        user.setEmailVerificationExpiresAt(null);
+        userRepository.save(user);
         if (user.getStatus() == UserStatus.LOCKED) {
             throw oauthError("account_locked");
         }

@@ -38,10 +38,6 @@ public class GoogleOAuth2SuccessHandler implements AuthenticationSuccessHandler 
         }
         AuthUserResponse user = authService.getCurrentUser(email);
         String token = jwtService.createToken(user).accessToken();
-        if (request.getSession(false) != null) {
-            request.getSession(false).invalidate();
-            response.addHeader("Set-Cookie", "JSESSIONID=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax");
-        }
         response.sendRedirect(frontendBaseUrl + "/#access_token=" + token);
     }
 }

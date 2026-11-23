@@ -20,8 +20,8 @@ export default function RelocationModal({ open, targets = [], onClose, onDone })
     const v = await form.validateFields()
     setSubmitting(true)
     try {
-      await inventoryApi.relocate({ skus: targets.map((t) => t.sku), ...v })
-      message.success(`Đã gửi lệnh điều chuyển tới thiết bị cầm tay (Handheld PDA) của tổ xe nâng Zone ${v.zone}!`)
+      await inventoryApi.relocate({ targets, ...v })
+      message.success(`Đã cập nhật vị trí lưu kho cho ${targets.length} SKU tại Zone ${v.zone}.`)
       onDone?.()
       onClose()
     } catch (e) {

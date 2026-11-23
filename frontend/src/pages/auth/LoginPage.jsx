@@ -9,6 +9,7 @@ import authApi, { MAX_FAILED_ATTEMPTS } from '../../api/authApi'
 import { USE_MOCK } from '../../api/axiosClient'
 import { accountsMock } from '../../mocks/accounts'
 import axiosClient from '../../api/axiosClient'
+import { clearAccessToken } from '../../api/authToken'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLES, ROLE_LABELS } from '../../constants/roles'
 
@@ -30,6 +31,7 @@ export default function LoginPage() {
       const user = await authApi.login(email.trim(), password)
       // Cổng này dành cho nhân sự nội bộ; khách hàng dùng cổng riêng
       if (user.role === ROLES.CUSTOMER) {
+        clearAccessToken()
         setError('Đây là cổng đăng nhập nội bộ. Tài khoản khách hàng vui lòng dùng cổng dành cho khách hàng.')
         return
       }

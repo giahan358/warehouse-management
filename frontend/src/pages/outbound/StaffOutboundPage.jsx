@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Input, Modal, Select, Table, message } from 'antd'
+import { Alert, Button, Input, InputNumber, Modal, Select, Table, message } from 'antd'
 import {
   CarOutlined, CheckSquareOutlined, ClockCircleOutlined, EyeOutlined, FilterOutlined,
   InboxOutlined, SearchOutlined, WarningOutlined, ShoppingOutlined, SendOutlined,
 } from '@ant-design/icons'
 import outboundApi from '../../api/outboundApi'
+import metaApi from '../../api/metaApi'
 import PageHeader from '../../components/common/PageHeader'
 import SegmentedBar from '../../components/common/SegmentedBar'
 import StatusTag from '../../components/common/StatusTag'
@@ -17,9 +18,6 @@ const TABS = [
   { key: 'STANDARD', label: 'Đơn giao thường' },
 ]
 
-// Trạng thái → cột đếm của 4 thẻ bước
-const BUCKET = { PENDING: 'pending', PICKING: 'preparing', PACKED: 'ready', HANDED_OVER: 'delivering', IN_DELIVERY: 'delivering' }
-
 export default function StaffOutboundPage() {
   const [rows, setRows] = useState([])
   const [summary, setSummary] = useState({ pending: 0, preparing: 0, ready: 0, delivering: 0 })
@@ -29,16 +27,28 @@ export default function StaffOutboundPage() {
   const [selected, setSelected] = useState([])
   const [shortageOrder, setShortageOrder] = useState(null)
   const [detailOrder, setDetailOrder] = useState(null)
-  const emptyShortage = { sku: undefined, reason: undefined, note: '' }
+  const emptyShortage = { sku: undefined, reason: undefined, quantityActual: undefined, note: '' }
   const [shortageForm, setShortageForm] = useState(emptyShortage)
+  const [trackingOrder, setTrackingOrder] = useState(null)
+  const [trackingForm, setTrackingForm] = useState({ carrier: undefined, trackingCode: '' })
+  const [carrierOptions, setCarrierOptions] = useState([])
+  const [reportOrder, setReportOrder] = useState(null)
   const updateRef = useRef(null)
 
-  useEffect(() => {
-    outboundApi.getFulfillment().then((d) => {
+  const load = async () => {
+    try {
+      const d = await outboundApi.getFulfillment()
       setRows(d.orders)
       setSummary(d.summary)
-      setLoading(false)
-    })
+    } catch (error) {
+      message.error(error?.response?.data?.message ?? error.message ?? 'Không tải được danh sách đơn xuất kho')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [])
+  useEffect(() => {
+    metaApi.getOptions().then((options) => {
+      setCarrierOptions((options?.carriers ?? []).map((carrier) => ({ value: carrier, label: carrier.replaceAll('_', ' ') })))
+    }).catch((error) => message.error(error?.response?.data?.message ?? 'Không tải được danh sách đơn vị vận chuyển'))
   }, [])
 
   const filtered = useMemo(() => {
@@ -56,25 +66,72 @@ export default function StaffOutboundPage() {
   const advance = async (order, to) => {
     const next = to ?? FULFILLMENT_NEXT[order.status]
     if (!next) return
-    await outboundApi.updateStatus(order.id, next)
-    setRows((rs) => rs.map((r) => (r.id === order.id ? { ...r, status: next, shortage: next === 'PENDING' ? r.shortage : false } : r)))
-    setSummary((s) => {
-      const from = BUCKET[order.status]
-      const dest = BUCKET[next]
-      return from === dest ? s : { ...s, [from]: Math.max(s[from] - 1, 0), [dest]: s[dest] + 1 }
-    })
-    message.success(`${order.id}: ${FULFILLMENT_STATUS[order.status].label} → ${FULFILLMENT_STATUS[next].label}`)
+    try {
+      const updated = await outboundApi.updateStatus(order.orderId ?? order.id, next)
+      const savedStatus = updated?.status ?? next
+      await load()
+      message.success(`${order.id}: ${FULFILLMENT_STATUS[order.status]?.label ?? order.status} → ${FULFILLMENT_STATUS[savedStatus]?.label ?? savedStatus}`)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không cập nhật được trạng thái đơn')
+    }
   }
 
   const closeShortage = () => { setShortageOrder(null); setShortageForm(emptyShortage) }
 
   const submitShortage = async () => {
-    const { sku, reason, note } = shortageForm
-    if (!sku || !reason) return message.error('Vui lòng chọn SKU thiếu và lý do')
+    const { sku, reason, quantityActual, note } = shortageForm
+    if (!sku || !reason || quantityActual == null) return message.error('Vui lòng chọn SKU, nhập số lượng thực soạn và lý do')
     if (reason === 'OTHER' && !note.trim()) return message.error('Vui lòng ghi chú chi tiết cho lý do "Khác"')
-    await outboundApi.reportShortage(shortageOrder.id, { sku, reason, note: note.trim() })
-    message.success(`Đã báo thiếu hàng ${shortageOrder.id} cho Admin`)
-    closeShortage()
+    try {
+      const item = shortageOrder.items.find((entry) => entry.sku === sku)
+      await outboundApi.updateActualQuantity(shortageOrder.orderId ?? shortageOrder.id, item.itemId, quantityActual, `${reason}: ${note.trim()}`.trim())
+      message.success(`Đã lưu số lượng thực soạn cho ${sku}`)
+      closeShortage()
+      await load()
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không gửi được báo cáo thiếu hàng')
+    }
+  }
+
+  const saveActualQuantity = async (item, quantityActual, note) => {
+    try {
+      await outboundApi.updateActualQuantity(detailOrder.orderId ?? detailOrder.id, item.itemId, quantityActual, note)
+      setDetailOrder(await outboundApi.getById(detailOrder.orderId ?? detailOrder.id))
+      await load()
+      message.success(`Đã cập nhật số lượng thực soạn của ${item.sku}`)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không cập nhật được số lượng thực soạn')
+      throw error
+    }
+  }
+
+  const openTracking = async (order) => {
+    try {
+      const latest = await outboundApi.getById(order.orderId ?? order.id)
+      setTrackingOrder(latest)
+      setTrackingForm({ carrier: latest.carrierCode ?? undefined, trackingCode: latest.tracking === '—' ? '' : latest.tracking ?? '' })
+    } catch (error) {
+      message.error(error?.response?.data?.message ?? 'Không tải được chi tiết đơn xuất')
+    }
+  }
+
+  const submitTracking = async () => {
+    if (!trackingForm.carrier || !trackingForm.trackingCode.trim()) return message.error('Vui lòng chọn đơn vị vận chuyển và nhập mã vận đơn')
+    try {
+      const id = trackingOrder.orderId ?? trackingOrder.id
+      await outboundApi.updateTracking(id, trackingForm.carrier, trackingForm.trackingCode.trim())
+      await outboundApi.updateStatus(id, 'IN_DELIVERY')
+      setTrackingOrder(null)
+      await load()
+      message.success(`Đã cập nhật vận đơn và bàn giao ${trackingOrder.id} cho đơn vị vận chuyển`)
+    } catch (error) {
+      message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không cập nhật được vận đơn/bàn giao')
+    }
+  }
+
+  const openHandoverReport = async (order) => {
+    try { setReportOrder(await outboundApi.getHandoverReport(order.orderId ?? order.id)) }
+    catch (error) { message.error(error?.response?.data?.error?.message ?? error?.response?.data?.message ?? error.message ?? 'Không tải được biên bản bàn giao') }
   }
 
   const actions = (r) => {
@@ -89,9 +146,15 @@ export default function StaffOutboundPage() {
       case 'PICKING':
         return <Button type="primary" size="small" onClick={() => advance(r)}>Xác nhận đóng gói</Button>
       case 'PACKED':
-        return <Button size="small" icon={<InboxOutlined />} onClick={() => advance(r)}>Bàn giao xe 3PL</Button>
+        return <Button size="small" icon={<InboxOutlined />} onClick={() => openTracking(r)}>Bàn giao xe 3PL</Button>
+      case 'IN_DELIVERY':
+        return <span style={{ display: 'inline-flex', gap: 8 }}>
+          <a onClick={() => openHandoverReport(r)}>Xem biên bản bàn giao</a>
+          <Button size="small" onClick={() => advance(r, 'DELIVERED')}>Đã giao</Button>
+          <Button size="small" danger onClick={() => advance(r, 'RETURNED')}>Hoàn hàng</Button>
+        </span>
       default:
-        return <a className="text-muted">Xem biên bản bàn giao</a>
+        return <a onClick={() => openHandoverReport(r)}>Xem biên bản bàn giao</a>
     }
   }
 
@@ -115,7 +178,10 @@ export default function StaffOutboundPage() {
       title: 'THAO TÁC NHÂN VIÊN', align: 'right', width: 250,
       render: (_, r) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-          <EyeOutlined style={{ color: '#0057c2', cursor: 'pointer' }} onClick={() => setDetailOrder(r)} />
+          <EyeOutlined style={{ color: '#0057c2', cursor: 'pointer' }} onClick={async () => {
+            try { setDetailOrder(await outboundApi.getById(r.orderId ?? r.id)) }
+            catch (error) { message.error(error?.response?.data?.message ?? 'Không tải được chi tiết đơn xuất') }
+          }} />
           {actions(r)}
         </span>
       ),
@@ -205,7 +271,7 @@ export default function StaffOutboundPage() {
                 const next = FULFILLMENT_NEXT[r.status]
                 return (
                   <Select
-                    size="small" style={{ width: 190 }} value={r.status} disabled={!next}
+                    size="small" style={{ width: 190 }} value={r.status} disabled={!next || r.status === 'PACKED'}
                     onChange={(to) => advance(r, to)}
                     options={[
                       { value: r.status, label: FULFILLMENT_STATUS[r.status].label },
@@ -225,6 +291,7 @@ export default function StaffOutboundPage() {
         onClose={() => setDetailOrder(null)}
         onStart={async () => { await advance(detailOrder); setDetailOrder(null) }}
         onShortage={() => { setShortageOrder(detailOrder); setDetailOrder(null) }}
+        onSaveActualQuantity={saveActualQuantity}
       />
 
       <Modal
@@ -256,6 +323,11 @@ export default function StaffOutboundPage() {
           options={SHORTAGE_REASONS}
         />
 
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Số lượng thực soạn:</div>
+        <InputNumber min={0} max={shortageOrder?.items?.find((item) => item.sku === shortageForm.sku)?.qty} precision={0}
+          style={{ width: '100%', marginBottom: 12 }} value={shortageForm.quantityActual}
+          onChange={(quantityActual) => setShortageForm((f) => ({ ...f, quantityActual }))} />
+
         <div style={{ fontWeight: 600, marginBottom: 4 }}>Ghi chú bổ sung cho bộ phận Điều phối & Kiểm kê:</div>
         <Input.TextArea
           rows={3} value={shortageForm.note}
@@ -265,9 +337,22 @@ export default function StaffOutboundPage() {
 
         <Alert
           style={{ marginTop: 12 }} type="warning" showIcon
-          message="Báo cáo được gửi cho Admin để liên hệ khách hàng hoặc bổ sung nguồn hàng. Nhân viên kho không tự thay đổi tồn kho."
+          message="Số lượng thực soạn và ghi chú sẽ được lưu vào đơn xuất. Nhân viên kho không sửa trực tiếp tồn kho."
         />
       </Modal>
+
+      <Modal open={!!trackingOrder} title={`Cập nhật vận đơn & bàn giao ${trackingOrder?.id ?? ''}`}
+        okText="Lưu và bàn giao" cancelText="Hủy" onCancel={() => setTrackingOrder(null)} onOk={submitTracking}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Đơn vị vận chuyển</div>
+        <Select style={{ width: '100%', marginBottom: 12 }} placeholder="Chọn đơn vị vận chuyển"
+          value={trackingForm.carrier} options={carrierOptions}
+          onChange={(carrier) => setTrackingForm((form) => ({ ...form, carrier }))} />
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Mã vận đơn</div>
+        <Input value={trackingForm.trackingCode} placeholder="Nhập mã vận đơn"
+          onChange={(event) => setTrackingForm((form) => ({ ...form, trackingCode: event.target.value }))} />
+      </Modal>
+
+      <OrderDetailModal order={reportOrder} reportMode onClose={() => setReportOrder(null)} />
     </div>
   )
 }

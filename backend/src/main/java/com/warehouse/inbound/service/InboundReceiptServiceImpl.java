@@ -53,6 +53,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -123,7 +124,7 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public InboundReceiptDetailResponse create(String email, String role, CreateInboundReceiptRequest request) {
         UserRole userRole = parseRole(role);
         Long customerId;
@@ -150,21 +151,11 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
         List<Product> products = new ArrayList<>();
         for (InboundItemRequest itemRequest : request.items()) {
             Product product = findOwnedProduct(itemRequest.productId(), customerId);
-            if (product.getStatus() != com.warehouse.common.enums.ProductStatus.ACTIVE) {
-                throw badRequest("Không thể tạo phiếu nhập với sản phẩm đang ẩn");
-            }
-            if (product.getVolumeM3() == null) {
-                throw badRequest("Cần khai báo đầy đủ kích thước sản phẩm trước khi đặt lịch nhập");
-            }
+            ensureActiveAndSized(product);
             requestedVolume = requestedVolume.add(product.getVolumeM3().multiply(itemRequest.expectedQuantity()));
             products.add(product);
         }
-        BigDecimal usedVolume = customerRepository.sumStoredVolume(customerId);
-        BigDecimal reservedVolume = customerRepository.sumReservedInboundVolume(customerId);
-        if (usedVolume.add(reservedVolume).add(requestedVolume).compareTo(customer.getCapacityM3()) > 0) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT, "CAPACITY_EXCEEDED", "Phiếu nhập vượt quá dung tích kho đã đăng ký");
-        }
+        ensureCapacity(customer, requestedVolume);
         InboundReceipt receipt = new InboundReceipt();
         LocalDateTime now = now();
         receipt.setReceiptCode("NK-" + now.format(RECEIPT_MONTH) + "-" + UUID.randomUUID());
@@ -210,7 +201,7 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public InboundReceiptItemResponse addItem(Long id, String email, InboundItemRequest request) {
         InboundReceipt receipt = lockReceipt(id);
         ensureOwner(receipt, email);
@@ -218,20 +209,31 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
         if (itemRepository.findByReceiptIdAndProductId(id, request.productId()).isPresent()) {
             throw new BusinessException(HttpStatus.CONFLICT, "DUPLICATE_RECEIPT_ITEM", "Sản phẩm đã có trong phiếu");
         }
+        Customer customer = lockCustomer(receipt.getCustomerId());
         Product product = findOwnedProduct(request.productId(), receipt.getCustomerId());
+        ensureActiveAndSized(product);
+        ensureCapacity(
+                customer,
+                product.getVolumeM3().multiply(request.expectedQuantity()));
         InboundReceiptItem item = itemRepository.saveAndFlush(
                 newItem(id, product.getId(), request.expectedQuantity()));
         return findItemView(id, item.getId());
     }
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public InboundReceiptItemResponse updateItem(
             Long id, Long itemId, String email, UpdateInboundItemRequest request) {
         InboundReceipt receipt = lockReceipt(id);
         ensureOwner(receipt, email);
         ensureStatus(receipt, InboundStatus.SCHEDULED);
         InboundReceiptItem item = findItem(id, itemId);
+        Product product = findOwnedProduct(item.getProductId(), receipt.getCustomerId());
+        ensureActiveAndSized(product);
+        Customer customer = lockCustomer(receipt.getCustomerId());
+        BigDecimal volumeChange = product.getVolumeM3().multiply(
+                request.expectedQuantity().subtract(item.getExpectedQuantity()));
+        ensureCapacity(customer, volumeChange);
         item.setExpectedQuantity(request.expectedQuantity());
         itemRepository.saveAndFlush(item);
         return findItemView(id, itemId);
@@ -346,6 +348,7 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
     public InboundReceiptDetailResponse confirm(Long id, String email) {
         InboundReceipt receipt = lockReceipt(id);
         ensureReceiving(receipt);
+        lockCustomer(receipt.getCustomerId());
         List<InboundReceiptItem> items = itemRepository.findByReceiptIdOrderById(id);
         if (items.isEmpty() || items.stream().anyMatch(item -> item.getActualQuantity() == null)) {
             throw new BusinessException(
@@ -397,8 +400,8 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
     public InboundDiscrepancyReportResponse getDiscrepancyReport(Long id, String email, String role) {
         InboundReceipt receipt = getAccessibleReceipt(id, email, role);
         List<InboundDiscrepancyReportResponse.DiscrepancyItem> discrepancies = new ArrayList<>();
-        BigDecimal shortageTotal = BigDecimal.ZERO;
-        BigDecimal damagedTotal = BigDecimal.ZERO;
+        BigDecimal totalShortage = BigDecimal.ZERO;
+        BigDecimal totalDamaged = BigDecimal.ZERO;
         for (InboundReceiptItemProjection item : itemRepository.findItemViews(id)) {
             BigDecimal actual = item.getActualQuantity();
             BigDecimal damaged = item.getDamagedQuantity() == null ? BigDecimal.ZERO : item.getDamagedQuantity();
@@ -419,12 +422,13 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
                         variance,
                         item.getLocationCode(),
                         item.getNote()));
-                shortageTotal = shortageTotal.add(item.getExpectedQuantity().subtract(actual).max(BigDecimal.ZERO));
-                damagedTotal = damagedTotal.add(damaged);
+                totalShortage = totalShortage.add(
+                        item.getExpectedQuantity().subtract(actual).subtract(damaged).max(BigDecimal.ZERO));
+                totalDamaged = totalDamaged.add(damaged);
             }
         }
         return new InboundDiscrepancyReportResponse(
-                id, receipt.getReceiptCode(), shortageTotal, damagedTotal, List.copyOf(discrepancies));
+                id, receipt.getReceiptCode(), totalShortage, totalDamaged, List.copyOf(discrepancies));
     }
 
     private InboundReceiptDetailResponse toDetail(InboundReceipt receipt) {
@@ -500,6 +504,34 @@ public class InboundReceiptServiceImpl implements InboundReceiptService {
                     HttpStatus.FORBIDDEN, "PRODUCT_ACCESS_DENIED", "Sản phẩm không thuộc khách hàng của phiếu nhập");
         }
         return product;
+    }
+
+    private Customer lockCustomer(Long customerId) {
+        return customerRepository.findLockedById(customerId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "CUSTOMER_NOT_FOUND", "Không tìm thấy khách hàng"));
+    }
+
+    private void ensureActiveAndSized(Product product) {
+        if (product.getStatus() != com.warehouse.common.enums.ProductStatus.ACTIVE) {
+            throw badRequest("Không thể tạo phiếu nhập với sản phẩm đang ẩn");
+        }
+        ensureSized(product);
+    }
+
+    private void ensureSized(Product product) {
+        if (product.getVolumeM3() == null) {
+            throw badRequest("Cần khai báo đầy đủ kích thước sản phẩm trước khi đặt lịch nhập");
+        }
+    }
+
+    private void ensureCapacity(Customer customer, BigDecimal additionalVolume) {
+        BigDecimal usedVolume = customerRepository.sumStoredVolume(customer.getId());
+        BigDecimal reservedVolume = customerRepository.sumReservedInboundVolume(customer.getId());
+        if (usedVolume.add(reservedVolume).add(additionalVolume).compareTo(customer.getCapacityM3()) > 0) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT, "CAPACITY_EXCEEDED", "Phiếu nhập vượt quá dung tích kho đã đăng ký");
+        }
     }
 
     private void validateUniqueProducts(List<InboundItemRequest> items) {

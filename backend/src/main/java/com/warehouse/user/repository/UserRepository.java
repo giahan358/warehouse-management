@@ -1,7 +1,9 @@
 package com.warehouse.user.repository;
 
 import com.warehouse.user.model.User;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
@@ -11,9 +13,17 @@ import org.springframework.data.repository.query.Param;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmailIgnoreCase(String email);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where lower(u.email) = lower(:email)")
+    Optional<User> lockByEmailForVerification(@Param("email") String email);
+
     Optional<User> findByGoogleId(String googleId);
 
     Optional<User> findByPasswordSetupTokenHash(String passwordSetupTokenHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.emailVerificationTokenHash = :tokenHash")
+    Optional<User> findLockedByEmailVerificationTokenHash(@Param("tokenHash") String tokenHash);
 
     boolean existsByEmailIgnoreCase(String email);
 

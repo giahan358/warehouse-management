@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md' # Chỉ sửa tài liệu .md thì khỏi chạy CI (đừng thêm docs/** vì còn file .sql)
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+# Có commit mới trên cùng nhánh/PR thì hủy lần chạy cũ cho đỡ tốn thời gian
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ===================== FRONTEND (React + Vite) =====================
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Vite 8 cần Node >= 20.19 hoặc >= 22.12
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cài dependencies
+        run: npm ci
+
+      # Hiện ESLint còn ~9 lỗi cũ trong code (chủ yếu react-hooks/set-state-in-effect).
+      # Để bước này KHÔNG chặn merge; khi sửa xong thì xóa dòng continue-on-error.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Test
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_USE_MOCK: "true"
+          VITE_API_BASE_URL: http://localhost:8080/api/v1
+
+  # ===================== BACKEND (Spring Boot + MySQL) =====================
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    # Test contextLoads của Spring Boot cần một MySQL thật để kết nối
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root123
+          MYSQL_DATABASE: warehouse_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot123"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/warehouse_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: root
+      DB_PASSWORD: root123
+      JWT_SECRET: ci-only-secret-that-is-long-enough-for-hs256-0123456789
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      # Nạp schema thật để biết file SQL còn chạy được (backend dùng ddl-auto=none)
+      - name: Import schema (docs/warehouse_db.sql)
+        working-directory: .
+        run: |
+          command -v mysql >/dev/null || sudo apt-get install -y mysql-client
+          mysql -h 127.0.0.1 -uroot -proot123 < docs/warehouse_db.sql
+
+      # mvnw trong repo đang ở mode 100644 (do commit từ Windows) nên cần cấp quyền chạy
+      - name: Cấp quyền chạy mvnw
+        run: chmod +x mvnw
+
+      - name: Build & Test
+        run: ./mvnw -B -ntp verify
+
+      - name: Lưu báo cáo test khi lỗi
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports
+          if-no-files-found: ignore

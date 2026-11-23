@@ -79,13 +79,12 @@ describe('customer portal routes', () => {
     expect(screen.queryByRole('heading', { name: 'Tổng quan & Tồn kho của tôi' })).not.toBeInTheDocument();
   });
 
-  it('does not render a login or registration page', async () => {
-    mockCustomerApi();
+  it('renders the internal login page at /login, separate from the customer portal', async () => {
     window.history.replaceState({}, '', '/login');
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Tổng quan & Tồn kho của tôi' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /tiếp tục với google|đăng nhập/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Cổng Đăng Nhập Nội Bộ' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tổng quan & Tồn kho của tôi' })).not.toBeInTheDocument();
   });
 });

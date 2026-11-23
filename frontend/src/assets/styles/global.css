@@ -14,7 +14,7 @@
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
 }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: 'Inter', sans-serif; background: var(--surface); color: var(--on-surface); }
+.internal-app { font-family: 'Inter', sans-serif; background: var(--surface); color: var(--on-surface); }
 
 .mono { font-family: var(--font-mono); }
 .mono-link { font-family: var(--font-mono); font-weight: 600; color: var(--primary); font-size: 12px; }
