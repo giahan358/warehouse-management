@@ -73,7 +73,7 @@ public class PaymentController {
                 .build();
     }
 
-    @PostMapping("/payments/vnpay/ipn")
+    @GetMapping("/payments/vnpay/ipn")
     public VnpayIpnResponse vnpayIpn(@RequestParam Map<String, String> parameters) {
         return paymentService.processVnpayIpn(parameters);
     }
