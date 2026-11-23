@@ -34,8 +34,8 @@ function mockCustomerApi(role = 'CUSTOMER') {
     });
     if (path === '/dashboard/customer/operations' || path === '/inventory/me'
       || path === '/inbound-receipts' || path === '/outbound-orders'
-      || path === '/products' || path === '/invoices/me') {
-      return response([], { page: 0, size: 20, totalElements: 0, totalPages: 0 });
+      || path === '/products' || path === '/invoices/me' || path === '/cod/me') {
+      return response({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 });
     }
     if (path === '/inbound-receipts/status-counts') return response({ all: 0, scheduled: 0, receiving: 0, confirmed: 0, cancelled: 0 });
     if (path === '/outbound-orders/status-counts') return response({ pending: 0, preparing: 0, packed: 0, inDelivery: 0, delivered: 0, returned: 0, cancelled: 0 });
